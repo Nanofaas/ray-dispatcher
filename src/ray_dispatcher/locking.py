@@ -59,6 +59,14 @@ class SessionLock:
             _sh(f"printf %s {owner} > {_LOCK_TMP} && mv -f {_LOCK_TMP} {_LOCK_FILE}")
         )
 
+    def _take_over(self) -> None:
+        """Overwrite a stale/corrupt lock, then confirm we actually won the write race."""
+        self._write_owner()
+        confirmed = self._read_owner()
+        if confirmed is None or confirmed.get("session_id") != self.session_id:
+            winner = confirmed.get("session_id") if confirmed else None
+            raise HostInUseError(f"lost session-lock takeover race to {winner!r}")
+
     def acquire(self) -> None:
         self.transport.run(_sh(f"mkdir -p {_LOCK_DIR}"))
         owner = shlex.quote(self._payload())
@@ -66,15 +74,18 @@ class SessionLock:
         if created.returncode == 0:
             return  # created atomically -> we own it
         existing = self._read_owner()
-        if existing is None or existing.get("session_id") == self.session_id:
-            self._write_owner()  # ours, or unreadable/corrupt -> take it
+        if existing is not None and existing.get("session_id") == self.session_id:
+            self._write_owner()  # already ours: refresh
+            return
+        if existing is None:
+            self._take_over()  # unreadable/corrupt -> take it, then verify
             return
         try:
             heartbeat = float(existing.get("heartbeat", 0))
         except (TypeError, ValueError):
             heartbeat = 0.0  # corrupt heartbeat -> treat as expired (takeable), never crash
         if self.now() - heartbeat > self.ttl_s:
-            self._write_owner()  # stale: heartbeat expired -> take over
+            self._take_over()  # stale: heartbeat expired -> take over, then verify
             return
         raise HostInUseError(
             f"session lock held by {existing.get('session_id')!r}"

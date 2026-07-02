@@ -32,15 +32,24 @@ def test_payload_contains_session_and_heartbeat():
 
 def test_acquire_takes_over_lock_with_corrupt_heartbeat():
     # a foreign lock whose heartbeat is non-numeric is treated as stale, not a crash
+    state = {"written": False}
+
     def results(argv):
         script = argv[2]
         if "set -C" in script:
             return CommandResult(1, "", "", 0.0)  # lock exists
+        if "mv -f" in script:
+            state["written"] = True
+            return CommandResult(0, "", "", 0.0)
         if script.startswith("cat "):
+            if state["written"]:  # confirming re-read: our write landed
+                return CommandResult(
+                    0, '{"session_id": "mine", "heartbeat": 1000.0}', "", 0.0
+                )
             return CommandResult(
                 0, '{"session_id": "other", "heartbeat": "garbage"}', "", 0.0
             )
-        return CommandResult(0, "", "", 0.0)  # mkdir, mv
+        return CommandResult(0, "", "", 0.0)  # mkdir
 
     t = FakeTransport(run_results=results)
     SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0).acquire()  # must not raise
