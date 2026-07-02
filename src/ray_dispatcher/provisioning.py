@@ -21,7 +21,7 @@ from .digests import environment_digest, runner_digest, source_digest
 from .errors import ConfigurationError, HostInUseError, NoHealthyHostsError, ProvisioningError
 from .locking import HeartbeatThread, SessionLock
 from .models import HostProvisioningResult, Inventory, Project, ProvisioningReport, RemoteHost
-from .ssh import CommandResult, SshConfig, SshTransport, Transport
+from .ssh import CommandResult, SshConfig, SshTransport, Transport, write_remote_file
 
 # Base sync flags shared by environment_digest and the uv sync invocation (§6.3.6).
 SYNC_FLAGS = (
@@ -150,14 +150,9 @@ class HostProvisioner:
         return r
 
     def _write_remote_file(self, path: str, content: str, *, mode: int | None = None) -> None:
-        tmp = path + ".tmp"
-        qtmp, qpath = shlex.quote(tmp), shlex.quote(path)
-        chmod = f" && chmod {mode:o} {qtmp}" if mode is not None else ""
-        cmd = f"printf %s {shlex.quote(content)} > {qtmp}{chmod} && mv -f {qtmp} {qpath}"
-        self._checked(
-            ["sh", "-c", cmd],
-            f"write {path}",
-        )
+        # TransportError is an Exception: the provision() driver already turns any
+        # step exception into a failed HostProvisioningResult, same as _StepError.
+        write_remote_file(self.t, path, content, mode=mode)
 
     def _resolve_layout(self) -> RemoteLayout:
         home = self._checked(["sh", "-c", 'printf %s "$HOME"'], "resolve $HOME").stdout.strip()

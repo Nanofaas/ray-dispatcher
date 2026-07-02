@@ -192,8 +192,7 @@ class SshRayBackend(ExecutionBackend):
         runner_dig = runner_digest(self._runner_path)
         healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
         inv_hosts = {h.host: h for h in inventory.hosts}
-        inv_slots = {name: inv_hosts[name].slots for name in healthy}
-        slots = inv_slots  # healthy host -> its slots
+        slots = {name: inv_hosts[name].slots for name in healthy}
         self._inv_hosts = inv_hosts
         self._runtimes = {
             host_name: self._build_runtime(project, result, inv_hosts[host_name], runner_dig)

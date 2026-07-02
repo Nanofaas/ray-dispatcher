@@ -196,6 +196,16 @@ class LeasePool:
         return {ls.attempt_id: ls.host for ls in self._leases.values()}
 
 
+def _parse_pgid(stdout: str) -> int | None:
+    """The pgid recorded in a pid.json payload, or None if unreadable or not a
+    real runner pgid (0 = caller's own group, 1 = init)."""
+    try:
+        pgid = int(json.loads(stdout)["pgid"])
+    except (ValueError, KeyError, TypeError):
+        return None
+    return pgid if pgid > 1 else None
+
+
 def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0) -> bool:
     """Terminate any orphaned process group recorded for a lost attempt (spec §8.2/§8.1).
 
@@ -206,12 +216,9 @@ def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0
     result = transport.run(["cat", pid_file])
     if result.returncode != 0:
         return True  # no recorded process -> nothing orphaned
-    try:
-        pgid = int(json.loads(result.stdout)["pgid"])
-    except (ValueError, KeyError, TypeError):
+    pgid = _parse_pgid(result.stdout)
+    if pgid is None:
         return False  # recorded but unreadable -> cannot confirm clean
-    if pgid <= 1:
-        return False  # 0 = caller's own group, 1 = init; never a runner pgid -> keep quarantined
     return terminate_process_group(transport, pgid, grace_s=grace_s)
 
 
@@ -274,9 +281,9 @@ def build_runner_manifest(
 def _kill_remote_pgid(transport: Transport, pid_path: str) -> None:
     """Best-effort SIGTERM→SIGKILL of the remote process group recorded in pid_path (§8.1)."""
     try:
-        pgid_info = json.loads(transport.run(["cat", pid_path]).stdout)
-        pgid = int(pgid_info.get("pgid", -1))
-        if pgid > 1:
+        result = transport.run(["cat", pid_path])
+        pgid = _parse_pgid(result.stdout) if result.returncode == 0 else None
+        if pgid is not None:
             terminate_process_group(transport, pgid, grace_s=10.0)
     except Exception:
         pass  # pid file absent or unreadable: nothing to kill
