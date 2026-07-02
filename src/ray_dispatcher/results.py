@@ -102,11 +102,16 @@ def collect_outputs(
         rel = spec.destination or spec.source
         dest = ensure_within(staging_dir, rel, field="output destination")
         dest.parent.mkdir(parents=True, exist_ok=True)
+        remote_path = f"{remote_run_dir}/{spec.source}"
         try:
-            transport.pull(f"{remote_run_dir}/{spec.source}", str(dest))
+            transport.pull(remote_path, str(dest))
         except TransportError as exc:
-            # rsync exits 23/24 for "file not found"; re-raise for SSH/network failures
+            # rsync exits 23/24 for "file vanished/not found" — but 23 also covers
+            # permission and partial-transfer errors. Probe: if the file exists
+            # remotely, the pull itself failed -> surface it (SSH-class failure).
             if exc.returncode not in {23, 24}:
+                raise
+            if transport.run(["test", "-e", remote_path]).returncode == 0:
                 raise
         if dest.exists():
             present.append(rel)

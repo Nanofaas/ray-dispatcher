@@ -49,7 +49,8 @@ def test_collect_classifies_missing_required_and_optional(tmp_path):
 
 
 def test_collect_swallows_rsync_file_not_found(tmp_path):
-    """TransportError with returncode 23 (rsync partial transfer) → classified as missing."""
+    """TransportError with returncode 23 and file genuinely absent remotely → classified as missing."""
+    from ray_dispatcher.ssh import CommandResult
     staging = tmp_path / "staging"
     staging.mkdir()
 
@@ -59,7 +60,9 @@ def test_collect_swallows_rsync_file_not_found(tmp_path):
             raise TransportError("rsync failed (23): no such file", returncode=23)
 
     outputs = (OutputSpec(source="missing.txt", required=True),)
-    res = collect_outputs(_PullRaises(), "/runs/b/j/1", outputs, staging)
+    # `test -e` returns 1: the probe confirms the file is genuinely absent remotely
+    t = _PullRaises(run_results=lambda argv: CommandResult(1, "", "", 0.0))
+    res = collect_outputs(t, "/runs/b/j/1", outputs, staging)
     assert res.missing_required == ("missing.txt",)
 
 
@@ -76,6 +79,38 @@ def test_collect_reraises_ssh_transport_error(tmp_path):
     outputs = (OutputSpec(source="out.txt", required=True),)
     with pytest.raises(TransportError):
         collect_outputs(_PullRaises(), "/runs/b/j/1", outputs, staging)
+
+
+class _FailingPullTransport(FakeTransport):
+    """pull always fails with rsync's partial-transfer code; run is programmable."""
+
+    def __init__(self, run_results=None):
+        super().__init__(run_results)
+        self.pulls: list[str] = []
+
+    def pull(self, remote, local, *, delete=False, excludes=()):
+        self.pulls.append(remote)
+        raise TransportError("rsync failed (23)", returncode=23)
+
+
+def test_pull_failure_with_file_present_remotely_reraises(tmp_path):
+    from ray_dispatcher.ssh import CommandResult
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    # `test -e` returns 0: the file exists remotely -> this is a transfer failure
+    t = _FailingPullTransport(run_results=lambda argv: CommandResult(0, "", "", 0.0))
+    with pytest.raises(TransportError):
+        collect_outputs(t, "/runs/b/j/1", (OutputSpec(source="out.txt"),), staging)
+
+
+def test_pull_failure_with_file_absent_remotely_is_missing(tmp_path):
+    from ray_dispatcher.ssh import CommandResult
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    # `test -e` returns 1: genuinely absent -> classified missing, no raise
+    t = _FailingPullTransport(run_results=lambda argv: CommandResult(1, "", "", 0.0))
+    res = collect_outputs(t, "/runs/b/j/1", (OutputSpec(source="out.txt"),), staging)
+    assert res.missing_required == ("out.txt",)
 
 
 def test_collect_rejects_destination_symlinked_outside_staging(tmp_path):
