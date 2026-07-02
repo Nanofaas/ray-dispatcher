@@ -98,6 +98,8 @@ class LeasePool:
         self._ttl = lease_ttl_s
         self._now = now
         self._token_factory = token_factory
+        self._pid_paths: dict[str, str] = {}      # lease token -> remote pid.json path
+        self._orphans: dict[str, list[str]] = {}  # host -> pid paths dropped by quarantine
 
     def _live_hosts(self) -> set[str]:
         return self._healthy - self._quarantined
@@ -146,7 +148,17 @@ class LeasePool:
         if lease is None:
             return False
         self._used[lease.host].discard(lease.slot)
+        self._pid_paths.pop(token, None)
         return True
+
+    def register_pid(self, token: str, pid_path: str) -> None:
+        """Record the remote pid.json path for a live lease (§8.2 reconcile)."""
+        if token in self._leases:
+            self._pid_paths[token] = pid_path
+
+    def take_orphans(self, host: str) -> list[str]:
+        """Pop the pid paths of leases this host lost to quarantine."""
+        return self._orphans.pop(host, [])
 
     def heartbeat(self, token: str) -> bool:
         lease = self._leases.get(token)
@@ -163,6 +175,9 @@ class LeasePool:
         for token in [t for t, ls in self._leases.items() if ls.host == host]:
             lease = self._leases.pop(token)
             self._used[lease.host].discard(lease.slot)
+            pid_path = self._pid_paths.pop(token, None)
+            if pid_path is not None:
+                self._orphans.setdefault(host, []).append(pid_path)
 
     def mark_reconciled(self, host: str) -> None:
         self._quarantined.discard(host)
@@ -597,3 +612,11 @@ class LeaseService:
     async def current_hosts(self) -> dict[str, str]:
         async with self._cond:
             return self._pool.current_hosts()
+
+    async def register_pid(self, token: str, pid_path: str) -> None:
+        async with self._cond:
+            self._pool.register_pid(token, pid_path)
+
+    async def take_orphans(self, host: str) -> list[str]:
+        async with self._cond:
+            return self._pool.take_orphans(host)
