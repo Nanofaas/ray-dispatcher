@@ -9,6 +9,7 @@ from ray_dispatcher.errors import (
     BatchExistsError,
     BatchFailedError,
     DispatcherError,
+    ModelValidationError,
     ProvisioningError,
 )
 from ray_dispatcher.models import (
@@ -119,6 +120,22 @@ def test_submit_raises_batch_exists_error(tmp_path):
     (tmp_path / batch_id).mkdir()
     with pytest.raises(BatchExistsError):
         d.submit([Job(id="j1", command=("echo",))], batch_id=batch_id)
+
+
+def test_submit_creates_batch_dir(tmp_path):
+    b = _mock_backend()
+    d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
+    d.submit([Job(id="j1", command=("echo",))], batch_id="b1")
+    assert (tmp_path / "b1").is_dir()  # created at submit, closing the TOCTOU window
+
+
+def test_submit_rejects_duplicate_job_ids(tmp_path):
+    b = _mock_backend()
+    d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
+    jobs = [Job(id="same", command=("echo",)), Job(id="same", command=("echo",))]
+    with pytest.raises(ModelValidationError, match="duplicate job id"):
+        d.submit(jobs, batch_id="b2")
+    b.submit.assert_not_called()
 
 
 def test_status_delegates_to_backend():

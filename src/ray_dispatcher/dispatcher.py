@@ -10,7 +10,7 @@ from collections.abc import Iterator, Sequence
 from pathlib import Path
 
 from .backends.base import ExecutionBackend
-from .errors import BatchExistsError, BatchFailedError, DispatcherError, ProvisioningError
+from .errors import BatchExistsError, BatchFailedError, DispatcherError, ModelValidationError, ProvisioningError
 from .models import (
     Inventory,
     Job,
@@ -77,13 +77,19 @@ class Dispatcher:
         return report
 
     def submit(self, jobs: Sequence[Job], *, batch_id: str | None = None) -> list[JobHandle]:
+        ids = [job.id for job in jobs]
+        dupes = {i for i in ids if ids.count(i) > 1}
+        if dupes:
+            raise ModelValidationError(f"duplicate job id(s) in batch: {sorted(dupes)}")
         if not self._setup_done:
             self.setup()
         if batch_id is None:
             batch_id = uuid.uuid4().hex
         batch_path = Path(self._results_dir) / batch_id
-        if batch_path.exists():
-            raise BatchExistsError(f"batch directory already exists: {batch_path}")
+        try:
+            batch_path.mkdir(parents=True)  # atomic claim: exists -> another batch owns it
+        except FileExistsError:
+            raise BatchExistsError(f"batch directory already exists: {batch_path}") from None
         handles = [self._backend.submit(batch_id, job) for job in jobs]
         self._outstanding.extend(handles)
         return handles
