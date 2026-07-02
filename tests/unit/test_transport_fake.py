@@ -13,7 +13,7 @@ def test_fake_records_calls_and_returns_default_ok():
     t.pull("/remote", "/local")
     assert r.ok
     assert t.calls[0] == ("run", ("echo", "hi"))
-    assert t.calls[1] == ("push", ("/local", "/remote", True, (".git/",)))
+    assert t.calls[1] == ("push", ("/local", "/remote", True, (".git/",), None))
     assert t.calls[2] == ("pull", ("/remote", "/local", False, ()))
 
 

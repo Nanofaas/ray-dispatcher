@@ -26,7 +26,7 @@ def test_install_runner_pushes_when_absent(tmp_path):
     digest = p._install_runner()
     pushes = [c[1] for c in p.t.calls if c[0] == "push"]
     assert len(pushes) == 1
-    local, remote, _, _ = pushes[0]
+    local, remote, _, _, _ = pushes[0]
     assert remote == f"/home/ubuntu/.ray_dispatcher/bin/{digest}/remote_runner.py"
 
 

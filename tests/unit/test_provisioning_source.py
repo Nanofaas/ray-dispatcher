@@ -24,7 +24,7 @@ def test_sync_source_pushes_with_delete_and_excludes(tmp_path):
     digest = p._sync_source()
     pushes = [c[1] for c in p.t.calls if c[0] == "push"]
     assert len(pushes) == 1
-    local, remote, delete, excludes = pushes[0]
+    local, remote, delete, excludes, _ = pushes[0]
     assert local.endswith("/")  # trailing slash -> copy contents
     assert remote.endswith("/source.staging/")
     assert delete is True

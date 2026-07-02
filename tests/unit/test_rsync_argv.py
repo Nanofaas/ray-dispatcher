@@ -36,3 +36,18 @@ def test_argv_no_identity_omits_i():
                     known_hosts_file="/kh")
     joined = " ".join(build_rsync_argv(cfg, "/a", "/b", delete=False, excludes=()))
     assert "-i " not in joined
+
+
+def test_rsync_argv_includes_chmod_when_given():
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None,
+                    known_hosts_file="/kh")
+    argv = build_rsync_argv(cfg, "/src", "u@h:/dst", delete=False, excludes=(),
+                            chmod="F600")
+    assert "--chmod=F600" in argv
+
+
+def test_rsync_argv_omits_chmod_by_default():
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None,
+                    known_hosts_file="/kh")
+    argv = build_rsync_argv(cfg, "/src", "u@h:/dst", delete=False, excludes=())
+    assert not any(a.startswith("--chmod") for a in argv)

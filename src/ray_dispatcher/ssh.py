@@ -73,7 +73,13 @@ class Transport(Protocol):
     def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult: ...
 
     def push(
-        self, local: str, remote: str, *, delete: bool = False, excludes: Sequence[str] = ()
+        self,
+        local: str,
+        remote: str,
+        *,
+        delete: bool = False,
+        excludes: Sequence[str] = (),
+        chmod: str | None = None,
     ) -> None: ...
 
     def pull(
@@ -95,9 +101,15 @@ class FakeTransport:
         return CommandResult(0, "", "", 0.0)
 
     def push(
-        self, local: str, remote: str, *, delete: bool = False, excludes: Sequence[str] = ()
+        self,
+        local: str,
+        remote: str,
+        *,
+        delete: bool = False,
+        excludes: Sequence[str] = (),
+        chmod: str | None = None,
     ) -> None:
-        self.calls.append(("push", (local, remote, delete, tuple(excludes))))
+        self.calls.append(("push", (local, remote, delete, tuple(excludes), chmod)))
 
     def pull(
         self, remote: str, local: str, *, delete: bool = False, excludes: Sequence[str] = ()
@@ -122,12 +134,20 @@ def _ssh_e_option(cfg: SshConfig) -> str:
 
 
 def build_rsync_argv(
-    cfg: SshConfig, src: str, dst: str, *, delete: bool, excludes: Sequence[str]
+    cfg: SshConfig,
+    src: str,
+    dst: str,
+    *,
+    delete: bool,
+    excludes: Sequence[str],
+    chmod: str | None = None,
 ) -> list[str]:
     # --protect-args: stops the remote shell from mangling paths with spaces or special chars
     argv = ["rsync", "-a", "--protect-args", "-e", _ssh_e_option(cfg)]
     if delete:
         argv.append("--delete")
+    if chmod is not None:
+        argv.append(f"--chmod={chmod}")  # final perms set during transfer (no window)
     for ex in excludes:
         argv += ["--exclude", ex]
     argv += [src, dst]
@@ -143,10 +163,18 @@ class SshTransport:
         self._conn: Any = None  # lazily-built fabric.Connection (Task 5)
 
     def push(
-        self, local: str, remote: str, *, delete: bool = False, excludes: Sequence[str] = ()
+        self,
+        local: str,
+        remote: str,
+        *,
+        delete: bool = False,
+        excludes: Sequence[str] = (),
+        chmod: str | None = None,
     ) -> None:
         dst = f"{self.cfg.user}@{self.cfg.host}:{remote}"
-        self._rsync(build_rsync_argv(self.cfg, local, dst, delete=delete, excludes=excludes))
+        self._rsync(
+            build_rsync_argv(self.cfg, local, dst, delete=delete, excludes=excludes, chmod=chmod)
+        )
 
     def pull(
         self, remote: str, local: str, *, delete: bool = False, excludes: Sequence[str] = ()

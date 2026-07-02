@@ -329,11 +329,7 @@ class HostProvisioner:
         )
         for secret in self.project.secrets:
             remote = f"{self._lo.secrets}/{secret.remote_name}"
-            self.t.push(secret.source, remote)
-            self._checked(
-                ["chmod", f"{secret.mode:o}", remote],
-                f"chmod secret {secret.remote_name}",
-            )
+            self.t.push(secret.source, remote, chmod=f"F{secret.mode:o}")
             # Owner check only — never reads the secret's contents (§6.3.8).
             # GNU stat first, BSD/macOS stat as a dev fallback.
             qr = shlex.quote(remote)

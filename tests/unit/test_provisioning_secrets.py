@@ -38,13 +38,26 @@ def test_copy_secrets_pushes_chmods_and_verifies_owner():
     p._copy_secrets()
     pushes = [c[1] for c in p.t.calls if c[0] == "push"]
     assert pushes[0][1] == "/home/ubuntu/.ray_dispatcher/secrets/dfaas/token"
-    chmods = [c[1] for c in p.t.calls if c[0] == "run" and c[1][0] == "chmod"]
-    assert ("chmod", "600", "/home/ubuntu/.ray_dispatcher/secrets/dfaas/token") == \
-        (chmods[0][0], chmods[0][1], chmods[0][2])
     assert any("mkdir -p" in s and "chmod 700" in s for s in _scripts(p.t))  # 0700 dir
     # contents are never printed: no `cat`/`printf` of the secret file itself
     assert not any("cat /home/ubuntu/.ray_dispatcher/secrets" in s for s in _scripts(p.t))
     assert any("stat" in s for s in _scripts(p.t))  # ownership was actually verified
+
+
+def test_copy_secrets_pushes_with_chmod_no_window():
+    """The secret's mode travels with the rsync transfer — no post-push chmod window."""
+    def results(argv):
+        if argv[0] == "sh" and "stat" in argv[2]:
+            return CommandResult(0, "ubuntu\n", "", 0.0)  # owner matches
+        return CommandResult(0, "", "", 0.0)
+
+    secrets = (SecretFile(source="/local/token", remote_name="token", mode=0o600),)
+    p = _prov(results, secrets=secrets)
+    p._copy_secrets()
+    pushes = [c[1] for c in p.t.calls if c[0] == "push"]
+    assert pushes[0][-1] == "F600"  # chmod recorded as the last element of the push tuple
+    # no separate `chmod 600 <secret>` command runs anymore
+    assert not any(c[0] == "run" and c[1][0] == "chmod" for c in p.t.calls)
 
 
 def test_copy_secrets_wrong_owner_raises():
