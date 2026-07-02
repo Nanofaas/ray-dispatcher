@@ -39,11 +39,22 @@ def test_inventory_rejects_duplicates():
         Inventory((a, b))
 
 
-def test_inventory_allows_same_host_different_user():
+def test_inventory_rejects_same_host_name_different_port():
+    # the backend keys runtimes/leases by host name alone, so the name must be unique
+    with pytest.raises(ModelValidationError, match="duplicate host"):
+        Inventory((
+            RemoteHost("10.0.0.1", user="ubuntu", port=22),
+            RemoteHost("10.0.0.1", user="ubuntu", port=2222),
+        ))
+
+
+def test_inventory_rejects_same_host_different_user():
+    # the backend keys runtimes/leases by host name alone, so the name must be unique
+    # regardless of user
     a = RemoteHost("h", user="u1")
     b = RemoteHost("h", user="u2")
-    inv = Inventory((a, b))
-    assert len(inv.hosts) == 2
+    with pytest.raises(ModelValidationError, match="duplicate host"):
+        Inventory((a, b))
 
 
 def test_inventory_from_yaml(tmp_path):

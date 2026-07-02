@@ -49,12 +49,13 @@ class Inventory:
     def __post_init__(self) -> None:
         if not self.hosts:
             raise ModelValidationError("inventory must contain at least one host")
-        seen: set[tuple[str, int, str]] = set()
+        seen: set[str] = set()
         for h in self.hosts:
-            key = (h.host, h.port, h.user)
-            if key in seen:
-                raise ModelValidationError(f"duplicate host entry: {key}")
-            seen.add(key)
+            # the host name is the routing key across the whole stack (leases,
+            # runtimes, transports), so it must be unique regardless of port/user.
+            if h.host in seen:
+                raise ModelValidationError(f"duplicate host name: {h.host!r}")
+            seen.add(h.host)
 
     @classmethod
     def from_yaml(cls, path: str) -> Inventory:
