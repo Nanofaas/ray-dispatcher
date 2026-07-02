@@ -113,3 +113,49 @@ def test_status_returns_running_then_succeeded(tmp_path, monkeypatch):
         assert result.status == JobStatus.SUCCEEDED
     finally:
         backend.teardown()
+
+
+def test_status_unknown_handle_raises(tmp_path, monkeypatch):
+    import pytest
+
+    from ray_dispatcher.errors import DispatcherError
+    from ray_dispatcher.models import JobHandle
+
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
+    backend = SshRayBackend(
+        transport_factory=lambda h: FakeTransport(), results_dir=str(tmp_path)
+    )
+    with pytest.raises(DispatcherError, match="unknown job handle"):
+        backend.status(JobHandle(batch_id="b", job_id="ghost", token="nope"))
+
+
+def test_status_returns_cancelled_for_cancelled_task(tmp_path, monkeypatch):
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
+
+    # ponytail: inline closure so cloudpickle serializes it without a module reference
+    def _blocking_transport(host: RemoteHost) -> FakeTransport:
+        def results(argv: list[str]) -> CommandResult:
+            if 'printf %s "$HOME"' in " ".join(argv):
+                return CommandResult(0, "/home/ubuntu", "", 0.0)
+            if "python3" in " ".join(argv):
+                time.sleep(5.0)
+                return CommandResult(0, "", "", 0.0)
+            if argv[0] == "cat":
+                return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
+            return CommandResult(0, "", "", 0.0)
+        return FakeTransport(run_results=results)
+
+    backend = SshRayBackend(transport_factory=_blocking_transport, results_dir=str(tmp_path))
+    try:
+        backend.setup(inv, _project())
+        handle = backend.submit("batch-c", Job(id="jc", command=("sleep",)))
+        backend.cancel(handle)
+        # poll: cancellation is async; status must settle on CANCELLED, never raise
+        for _ in range(100):
+            if backend.status(handle) == JobStatus.CANCELLED:
+                break
+            time.sleep(0.1)
+        assert backend.status(handle) == JobStatus.CANCELLED
+    finally:
+        backend.teardown()

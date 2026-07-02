@@ -16,7 +16,7 @@ from typing import cast
 import ray
 
 from ..digests import runner_digest
-from ..errors import RayRuntimeConflictError
+from ..errors import DispatcherError, RayRuntimeConflictError
 from ..models import (
     HostProvisioningResult,
     Inventory,
@@ -217,12 +217,18 @@ class SshRayBackend(ExecutionBackend):
     def status(self, handle: JobHandle) -> JobStatus:
         ref = self._refs.get(handle.token)
         if ref is None:
-            return JobStatus.PENDING
+            raise DispatcherError(
+                f"unknown job handle: job {handle.job_id!r} in batch {handle.batch_id!r} "
+                "was not submitted through this backend"
+            )
         ready, _ = ray.wait([ref], timeout=0)
-        if ready:
+        if not ready:
+            return JobStatus.RUNNING
+        try:
             result: JobResult = ray.get(ref)  # type: ignore[call-overload]
-            return result.status
-        return JobStatus.RUNNING
+        except ray.exceptions.TaskCancelledError:
+            return JobStatus.CANCELLED
+        return result.status
 
     def cancel(self, handle: JobHandle) -> None:
         ref = self._refs.get(handle.token)
