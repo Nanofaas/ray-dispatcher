@@ -59,6 +59,15 @@ def test_setup_calls_backend_setup():
     assert report.hosts[0].succeeded
 
 
+def test_setup_forwards_force_to_backend():
+    inv = _inv()
+    proj = _proj()
+    b = _mock_backend()
+    d = Dispatcher(inv, proj, backend=b)
+    d.setup(force=True)
+    b.setup.assert_called_once_with(inv, proj, force=True)
+
+
 def test_setup_idempotent_returns_same_report():
     b = _mock_backend()
     d = Dispatcher(_inv(), _proj(), backend=b)
