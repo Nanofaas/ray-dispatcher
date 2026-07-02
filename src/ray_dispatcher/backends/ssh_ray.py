@@ -31,7 +31,14 @@ from ..models import (
 )
 from ..provisioning import ProvisioningOutcome, RemoteLayout, _default_transport, provision
 from ..results import JobLayout, write_result_json
-from ..scheduling import HostRuntime, Lease, LeaseService, run_job, secret_env_map
+from ..scheduling import (
+    HostRuntime,
+    Lease,
+    LeaseService,
+    reconcile_host,
+    run_job,
+    secret_env_map,
+)
 from ..ssh import Transport
 from .base import ExecutionBackend
 
@@ -140,6 +147,8 @@ class SshRayBackend(ExecutionBackend):
         min_disk_mb: int = 500,
         results_dir: str = "./results",
         require_all_hosts: bool = True,
+        lease_ttl_s: float = 60.0,
+        sweep_interval_s: float = 10.0,
     ) -> None:
         from .. import remote_runner
 
@@ -149,6 +158,10 @@ class SshRayBackend(ExecutionBackend):
         self._min_disk_mb = min_disk_mb
         self._results_dir = results_dir
         self._require_all_hosts = require_all_hosts
+        self._lease_ttl_s = lease_ttl_s
+        self._sweep_interval_s = sweep_interval_s
+        self._sweep_stop = threading.Event()
+        self._sweeper: threading.Thread | None = None
         self._owns_runtime = False
         self._actor: ray.actor.ActorHandle | None = None  # type: ignore[type-arg]
         self._outcome: ProvisioningOutcome | None = None
@@ -193,8 +206,41 @@ class SshRayBackend(ExecutionBackend):
             runtime_env={"excludes": ["pyproject.toml", "uv.lock", "*.lock"]},
         )
         self._owns_runtime = True
-        self._actor = HostLease.remote(slots)  # type: ignore[assignment]
+        self._actor = HostLease.remote(slots, lease_ttl_s=self._lease_ttl_s)  # type: ignore[assignment]
+        self._sweep_stop.clear()
+        self._sweeper = threading.Thread(
+            target=self._sweep_loop, daemon=True, name="lease-sweeper"
+        )
+        self._sweeper.start()
         return outcome.report
+
+    def _sweep_loop(self) -> None:
+        while not self._sweep_stop.wait(self._sweep_interval_s):
+            try:
+                self._sweep_once()
+            except Exception:  # noqa: BLE001
+                if self._sweep_stop.is_set():
+                    return  # teardown in progress; actor is gone
+                # transient actor/SSH hiccup: try again next tick
+
+    def _sweep_once(self) -> None:
+        """Expire dead leases, reconcile quarantined hosts, readmit clean ones (§8.2)."""
+        actor = self._actor
+        if actor is None:
+            return
+        ray.get(actor.sweep.remote())
+        for host in ray.get(actor.quarantined_hosts.remote()):
+            pid_paths = ray.get(actor.take_orphans.remote(host))
+            transport = self._transport_factory(self._inv_hosts[host])
+            try:
+                clean = all(reconcile_host(transport, p) for p in pid_paths)
+            except Exception:  # noqa: BLE001 — unreachable host stays quarantined
+                clean = False
+            if clean:
+                ray.get(actor.mark_reconciled.remote(host))
+            # ponytail: on a failed reconcile the popped pid paths are dropped —
+            # the host stays quarantined until a later sweep finds it clean by
+            # probe; re-register orphans if partial-kill recovery ever matters.
 
     def _build_runtime(
         self, project: Project, result: HostProvisioningResult, host: RemoteHost, runner_dig: str
@@ -264,6 +310,10 @@ class SshRayBackend(ExecutionBackend):
     def teardown(self, *, purge: bool = False) -> None:
         # ponytail: purge + cancel/reconcile of outstanding attempts land in 6c/6d;
         # this slice does the runtime + lock release (§10.2,4,5).
+        self._sweep_stop.set()
+        if self._sweeper is not None:
+            self._sweeper.join(timeout=self._sweep_interval_s + 5.0)
+            self._sweeper = None
         if self._actor is not None:
             ray.kill(self._actor)
             self._actor = None
