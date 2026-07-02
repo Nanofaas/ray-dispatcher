@@ -1,5 +1,7 @@
 """run_job registers the attempt's remote pid path right after acquiring a lease."""
 
+import pytest
+
 from ray_dispatcher.models import Job, JobStatus, RetryPolicy
 from ray_dispatcher.provisioning import RemoteLayout
 from ray_dispatcher.results import JobLayout
@@ -50,3 +52,28 @@ def test_run_job_registers_pid_path_after_acquire(tmp_path):
     assert lease.registered == [
         ("t1", "/home/u/.ray_dispatcher/runs/b1/j1/1/pid.json")
     ]
+
+
+def test_run_job_releases_lease_when_register_pid_raises(tmp_path):
+    class _ExplodingLease(_RecordingLease):
+        def __init__(self):
+            super().__init__()
+            self.released: list[str] = []
+
+        def register_pid(self, token, pid_path):
+            raise RuntimeError("actor unreachable")
+
+        def release(self, token):
+            self.released.append(token)
+
+    lease = _ExplodingLease()
+    job = Job(id="j1", command=("echo",))
+    with pytest.raises(RuntimeError, match="actor unreachable"):
+        run_job(
+            job, batch_id="b1", lease=lease,
+            runtime_for=lambda h: _runtime(),
+            transport_for=lambda h: _ok_transport(),
+            local=JobLayout(str(tmp_path), "b1", "j1"),
+            policy=RetryPolicy(),
+        )
+    assert lease.released == ["t1"]  # the lease is released even though register_pid blew up

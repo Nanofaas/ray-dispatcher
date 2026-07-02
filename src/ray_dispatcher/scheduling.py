@@ -535,12 +535,13 @@ def run_job(
         n = len(attempts) + 1
         leased = lease.acquire(job.id, exclude=tried)
         runtime = runtime_for(leased.host)
-        # Register the attempt's pid file so the sweeper can reconcile the host
-        # if this worker dies mid-attempt (§8.2).
-        lease.register_pid(
-            leased.token, runtime.layout.run_paths(batch_id, job.id, n).pid
-        )
         try:
+            # Register the attempt's pid file so the sweeper can reconcile the host
+            # if this worker dies mid-attempt (§8.2). Inside the try so a raising
+            # register_pid still releases the lease via the finally below.
+            lease.register_pid(
+                leased.token, runtime.layout.run_paths(batch_id, job.id, n).pid
+            )
             result = execute_attempt(
                 transport_for(leased.host), runtime, job,
                 batch_id=batch_id, attempt=n, local=local,
