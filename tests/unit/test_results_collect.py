@@ -49,7 +49,7 @@ def test_collect_classifies_missing_required_and_optional(tmp_path):
 
 
 def test_collect_swallows_rsync_file_not_found(tmp_path):
-    """TransportError with returncode 23 and file genuinely absent remotely → classified as missing."""
+    """TransportError with returncode 23 and file genuinely absent remotely -> missing."""
     from ray_dispatcher.ssh import CommandResult
     staging = tmp_path / "staging"
     staging.mkdir()
