@@ -69,6 +69,9 @@ class _ActorLeaseHandle:
             self._hb_thread = None
         ray.get(self._actor.release.remote(token))
 
+    def register_pid(self, token: str, pid_path: str) -> None:
+        ray.get(self._actor.register_pid.remote(token, pid_path))
+
     def _heartbeat(self, token: str) -> None:
         while not self._stop.wait(self._heartbeat_interval_s):
             try:

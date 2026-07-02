@@ -1,0 +1,52 @@
+"""run_job registers the attempt's remote pid path right after acquiring a lease."""
+
+from ray_dispatcher.models import Job, JobStatus, RetryPolicy
+from ray_dispatcher.provisioning import RemoteLayout
+from ray_dispatcher.results import JobLayout
+from ray_dispatcher.scheduling import HostRuntime, Lease, run_job
+from ray_dispatcher.ssh import CommandResult, FakeTransport
+
+
+class _RecordingLease:
+    def __init__(self):
+        self.registered: list[tuple[str, str]] = []
+
+    def acquire(self, attempt_id, *, exclude=()):
+        return Lease(token="t1", host="h1", slot=0, attempt_id=attempt_id,
+                     expiry_s=60.0, heartbeat_s=0.0)
+
+    def release(self, token):
+        pass
+
+    def register_pid(self, token, pid_path):
+        self.registered.append((token, pid_path))
+
+
+def _runtime():
+    layout = RemoteLayout("/home/u", "proj")
+    return HostRuntime(host="h1", layout=layout, environment_digest="e" * 8,
+                       runner_digest="r" * 8, project_path="/proj", secret_env={})
+
+
+def _ok_transport():
+    def results(argv):
+        if argv[0] == "cat":
+            return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
+        return CommandResult(0, "", "", 0.0)
+    return FakeTransport(run_results=results)
+
+
+def test_run_job_registers_pid_path_after_acquire(tmp_path):
+    lease = _RecordingLease()
+    job = Job(id="j1", command=("echo",))
+    result = run_job(
+        job, batch_id="b1", lease=lease,
+        runtime_for=lambda h: _runtime(),
+        transport_for=lambda h: _ok_transport(),
+        local=JobLayout(str(tmp_path), "b1", "j1"),
+        policy=RetryPolicy(),
+    )
+    assert result.status is JobStatus.SUCCEEDED
+    assert lease.registered == [
+        ("t1", "/home/u/.ray_dispatcher/runs/b1/j1/1/pid.json")
+    ]

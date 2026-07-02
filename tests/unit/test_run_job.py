@@ -25,6 +25,9 @@ class FakeLease:
     def release(self, token):
         pass
 
+    def register_pid(self, token, pid_path):
+        pass
+
 
 def _runtime(host):
     return HostRuntime(host=host, layout=RemoteLayout("/home/u", "dfaas"),

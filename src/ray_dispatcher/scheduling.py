@@ -481,6 +481,8 @@ class LeaseHandle(Protocol):
 
     def release(self, token: str) -> None: ...
 
+    def register_pid(self, token: str, pid_path: str) -> None: ...
+
 
 def _failed_attempt(
     n: int, host: str, kind: FailureKind, error: str, local: JobLayout
@@ -525,9 +527,15 @@ def run_job(
     while True:
         n = len(attempts) + 1
         leased = lease.acquire(job.id, exclude=tried)
+        runtime = runtime_for(leased.host)
+        # Register the attempt's pid file so the sweeper can reconcile the host
+        # if this worker dies mid-attempt (§8.2).
+        lease.register_pid(
+            leased.token, runtime.layout.run_paths(batch_id, job.id, n).pid
+        )
         try:
             result = execute_attempt(
-                transport_for(leased.host), runtime_for(leased.host), job,
+                transport_for(leased.host), runtime, job,
                 batch_id=batch_id, attempt=n, local=local,
             )
         except TransportError as e:
