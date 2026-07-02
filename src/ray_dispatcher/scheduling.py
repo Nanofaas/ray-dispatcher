@@ -353,7 +353,17 @@ def execute_attempt(
             if _t.is_alive():
                 # Timed out — best-effort terminate the remote process group (§8.1).
                 _kill_remote_pgid(transport, run.pid)
-                return AttemptResult(
+                # ponytail: the _invoke thread stays blocked on its SSH call until
+                # the remote process dies; acceptable leak, transports are per-attempt.
+                for remote, local_log in (
+                    (run.stdout, local.stdout_log(attempt)),
+                    (run.stderr, local.stderr_log(attempt)),
+                ):
+                    try:
+                        transport.pull(remote, str(local_log))
+                    except TransportError:
+                        pass  # logs may not exist if the runner never started
+                result = AttemptResult(
                     number=attempt,
                     host=runtime.host,
                     status=JobStatus.TIMED_OUT,
@@ -364,6 +374,8 @@ def execute_attempt(
                     failure_kind=FailureKind.TIMEOUT,
                     error="job timed out",
                 )
+                write_attempt_json(local.attempt_json(attempt), result)
+                return result
 
             if _exc:
                 raise _exc[0]  # re-raise SSH/dispatcher exception from the thread
@@ -458,8 +470,8 @@ class LeaseHandle(Protocol):
 def _failed_attempt(
     n: int, host: str, kind: FailureKind, error: str, local: JobLayout
 ) -> AttemptResult:
-    """Build the AttemptResult for an attempt that raised before producing one."""
-    return AttemptResult(
+    """Build and persist the AttemptResult for an attempt that raised before producing one."""
+    result = AttemptResult(
         number=n,
         host=host,
         status=JobStatus.FAILED,
@@ -470,6 +482,9 @@ def _failed_attempt(
         failure_kind=kind,
         error=error,
     )
+    local.attempt_dir(n).mkdir(parents=True, exist_ok=True)
+    write_attempt_json(local.attempt_json(n), result)
+    return result
 
 
 def run_job(

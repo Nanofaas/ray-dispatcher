@@ -1,3 +1,4 @@
+import json
 import threading
 
 from ray_dispatcher.models import FailureKind, Job, JobStatus
@@ -73,3 +74,36 @@ def test_execute_attempt_no_timeout_when_timeout_s_is_none(tmp_path):
 
     result = execute_attempt(transport, _runtime(), job, batch_id="b1", attempt=1, local=layout)
     assert result.status == JobStatus.SUCCEEDED
+
+
+def test_timeout_attempt_writes_attempt_json_and_pulls_logs(tmp_path):
+    """The TIMED_OUT attempt leaves attempt.json and best-effort logs on disk (§9.1)."""
+    runner_started = threading.Event()
+    runner_done = threading.Event()
+
+    def results(argv: list[str]) -> CommandResult:
+        cmd = " ".join(argv)
+        if "python3" in cmd:  # runner invocation — block until released
+            runner_started.set()
+            runner_done.wait(timeout=5.0)
+            return CommandResult(0, "", "", 0.0)
+        if argv[0] == "cat" and "pid" in cmd:  # PID file read
+            return CommandResult(0, '{"pid": 111, "pgid": 222}', "", 0.0)
+        if "kill" in cmd and "-0" in cmd:  # terminate_process_group probe
+            runner_done.set()
+            return CommandResult(1, "", "", 0.0)  # pgid already gone
+        return CommandResult(0, "", "", 0.0)
+
+    transport = FakeTransport(run_results=results)
+    layout = JobLayout(str(tmp_path), "b1", "j1")
+    job = Job(id="j1", command=("sleep", "99"), timeout_s=0.05)
+
+    result = execute_attempt(
+        transport, _runtime(), job, batch_id="b1", attempt=1, local=layout
+    )
+    assert result.status == JobStatus.TIMED_OUT
+    doc = json.loads(layout.attempt_json(1).read_text())
+    assert doc["failure_kind"] == "timeout"
+    # best-effort log pull was attempted (FakeTransport records pull calls)
+    pulled = [c for c in transport.calls if c[0] == "pull"]
+    assert len(pulled) == 2  # stdout + stderr
