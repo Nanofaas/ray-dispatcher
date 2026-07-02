@@ -21,7 +21,9 @@ from ..models import (
 
 class ExecutionBackend(ABC):
     @abstractmethod
-    def setup(self, inventory: Inventory, project: Project) -> ProvisioningReport: ...
+    def setup(
+        self, inventory: Inventory, project: Project, *, force: bool = False
+    ) -> ProvisioningReport: ...
 
     @abstractmethod
     def submit(self, batch_id: str, job: Job) -> JobHandle: ...

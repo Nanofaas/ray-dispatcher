@@ -64,3 +64,29 @@ def test_setup_propagates_no_healthy_hosts_without_starting_ray(monkeypatch):
     with pytest.raises(NoHealthyHostsError):
         backend.setup(Inventory((RemoteHost("10.0.0.9", user="ubuntu"),)), _project())
     assert not ray.is_initialized()   # Ray never started when provisioning yields no host
+
+
+def test_setup_with_require_all_hosts_fails_before_ray_starts(monkeypatch):
+    import pytest
+    import ray
+    from ray_dispatcher.backends import ssh_ray
+    from ray_dispatcher.backends.ssh_ray import SshRayBackend
+    from ray_dispatcher.errors import ProvisioningError
+    from ray_dispatcher.models import Inventory, Project, RemoteHost
+    from ray_dispatcher.provisioning import provision as real_provision
+
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu"),))
+    proj = Project(path="/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25")
+
+    captured: dict[str, object] = {}
+
+    def fake_provision(*args, **kwargs):
+        captured.update(kwargs)
+        raise ProvisioningError(None, "not every host provisioned")
+
+    monkeypatch.setattr(ssh_ray, "provision", fake_provision)
+    backend = SshRayBackend(transport_factory=lambda h: None, require_all_hosts=True)
+    with pytest.raises(ProvisioningError):
+        backend.setup(inv, proj)
+    assert captured.get("require_all_hosts") is True  # flag reached provision()
+    assert not ray.is_initialized()  # Ray never started, nothing leaked

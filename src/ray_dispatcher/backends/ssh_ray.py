@@ -136,6 +136,7 @@ class SshRayBackend(ExecutionBackend):
         retry_policy: RetryPolicy = RetryPolicy(),  # noqa: B008
         min_disk_mb: int = 500,
         results_dir: str = "./results",
+        require_all_hosts: bool = True,
     ) -> None:
         from .. import remote_runner
 
@@ -144,6 +145,7 @@ class SshRayBackend(ExecutionBackend):
         self._retry_policy = retry_policy
         self._min_disk_mb = min_disk_mb
         self._results_dir = results_dir
+        self._require_all_hosts = require_all_hosts
         self._owns_runtime = False
         self._actor: ray.actor.ActorHandle | None = None  # type: ignore[type-arg]
         self._outcome: ProvisioningOutcome | None = None
@@ -151,7 +153,9 @@ class SshRayBackend(ExecutionBackend):
         self._inv_hosts: dict[str, RemoteHost] = {}
         self._refs: dict[str, object] = {}
 
-    def setup(self, inventory: Inventory, project: Project) -> ProvisioningReport:
+    def setup(
+        self, inventory: Inventory, project: Project, *, force: bool = False
+    ) -> ProvisioningReport:
         if ray.is_initialized():
             raise RayRuntimeConflictError(
                 "a Ray runtime is already initialized; ray_dispatcher owns its own "
@@ -163,6 +167,7 @@ class SshRayBackend(ExecutionBackend):
             inventory, project,
             runner_path=self._runner_path, transport_factory=self._transport_factory,
             min_disk_mb=self._min_disk_mb,
+            require_all_hosts=self._require_all_hosts, force=force,
         )
         self._outcome = outcome
         runner_dig = runner_digest(self._runner_path)

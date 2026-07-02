@@ -17,4 +17,4 @@ def test_declares_the_spec_3_3_methods():
 
 def test_setup_signature_takes_inventory_and_project():
     sig = inspect.signature(ExecutionBackend.setup)
-    assert list(sig.parameters)[1:] == ["inventory", "project"]
+    assert list(sig.parameters)[1:] == ["inventory", "project", "force"]

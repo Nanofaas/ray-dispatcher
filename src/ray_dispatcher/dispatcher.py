@@ -53,7 +53,11 @@ class Dispatcher:
             from .backends.ssh_ray import (
                 SshRayBackend,  # deferred: avoids `import ray` at module load
             )
-            backend = SshRayBackend(retry_policy=retry_policy, results_dir=results_dir)
+            backend = SshRayBackend(
+                retry_policy=retry_policy,
+                results_dir=results_dir,
+                require_all_hosts=require_all_hosts,
+            )
         self._backend = backend
         self._setup_done = False
         self._setup_report: ProvisioningReport | None = None
@@ -67,7 +71,7 @@ class Dispatcher:
                     "teardown and create a new Dispatcher to re-provision (§4.5)"
                 )
             return self._setup_report  # type: ignore[return-value]
-        report = self._backend.setup(self._inventory, self._project)
+        report = self._backend.setup(self._inventory, self._project, force=force)
         if self._require_all_hosts:
             failed = [h for h in report.hosts if not h.succeeded]
             if failed:
