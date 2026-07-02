@@ -159,3 +159,50 @@ def test_status_returns_cancelled_for_cancelled_task(tmp_path, monkeypatch):
         assert backend.status(handle) == JobStatus.CANCELLED
     finally:
         backend.teardown()
+
+
+def test_cancel_running_job_writes_cancelled_result_json(tmp_path, monkeypatch):
+    import json
+
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
+
+    # ponytail: inline closure so cloudpickle serializes it without a module reference
+    def _blocking_transport(host: RemoteHost) -> FakeTransport:
+        def results(argv: list[str]) -> CommandResult:
+            if 'printf %s "$HOME"' in " ".join(argv):
+                return CommandResult(0, "/home/ubuntu", "", 0.0)
+            if "python3" in " ".join(argv):
+                time.sleep(10.0)
+                return CommandResult(0, "", "", 0.0)
+            if argv[0] == "cat":
+                return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
+            return CommandResult(0, "", "", 0.0)
+        return FakeTransport(run_results=results)
+
+    backend = SshRayBackend(transport_factory=_blocking_transport, results_dir=str(tmp_path))
+    try:
+        backend.setup(inv, _project())
+        handle = backend.submit("batch-k", Job(id="jk", command=("sleep",)))
+        # wait until the task is actually running before cancelling
+        for _ in range(100):
+            if backend.status(handle) == JobStatus.RUNNING:
+                break
+            time.sleep(0.05)
+        # status()==RUNNING only means "not finished yet" (ray.wait can't see inside
+        # a worker that's still spinning up); give the fresh per-test Ray worker time
+        # to actually enter the task body, otherwise cancel lands pre-start and the
+        # in-task handler this test targets never runs.
+        time.sleep(1.5)
+        backend.cancel(handle)
+        result = backend.resolve(handle)
+        assert result.status == JobStatus.CANCELLED
+        result_json = tmp_path / "batch-k" / "jk" / "result.json"
+        # the in-task handler must persist the cancelled result locally
+        for _ in range(100):
+            if result_json.exists():
+                break
+            time.sleep(0.1)
+        assert json.loads(result_json.read_text())["status"] == "cancelled"
+    finally:
+        backend.teardown()

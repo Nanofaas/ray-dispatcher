@@ -105,7 +105,9 @@ def _attempt_task(
         )
         write_result_json(local.result_json, result)
         return result
-    except ray.exceptions.TaskCancelledError:
+    # Ray delivers cancel to a running task as KeyboardInterrupt; TaskCancelledError
+    # covers the pre-start window. Both terminate as a CANCELLED JobResult (§8.1).
+    except (KeyboardInterrupt, ray.exceptions.TaskCancelledError):
         cancelled = JobResult(
             id=job.id, batch_id=batch_id, status=JobStatus.CANCELLED,
             returncode=None, duration_s=0.0, host=None, output_dir=None,
