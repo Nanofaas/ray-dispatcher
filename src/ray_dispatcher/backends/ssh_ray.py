@@ -7,6 +7,7 @@ and shut down at teardown.
 
 from __future__ import annotations
 
+import logging
 import secrets
 import threading
 import uuid
@@ -41,6 +42,8 @@ from ..scheduling import (
 )
 from ..ssh import Transport
 from .base import ExecutionBackend
+
+_log = logging.getLogger(__name__)
 
 # The async lease state machine, run as a Ray actor that holds no host CPU (§3.2.3).
 HostLease = ray.remote(num_cpus=0)(LeaseService)
@@ -222,6 +225,7 @@ class SshRayBackend(ExecutionBackend):
                 if self._sweep_stop.is_set():
                     return  # teardown in progress; actor is gone
                 # transient actor/SSH hiccup: try again next tick
+                _log.warning("lease sweep failed; retrying next tick", exc_info=True)
 
     def _sweep_once(self) -> None:
         """Expire dead leases, reconcile quarantined hosts, readmit clean ones (§8.2)."""
@@ -236,6 +240,9 @@ class SshRayBackend(ExecutionBackend):
                 clean = all(reconcile_host(transport, p) for p in pid_paths)
             except Exception:  # noqa: BLE001 — unreachable host stays quarantined
                 clean = False
+                _log.warning(
+                    "reconcile of host %s failed; host stays quarantined", host, exc_info=True
+                )
             if clean:
                 ray.get(actor.mark_reconciled.remote(host))
             # ponytail: on a failed reconcile the popped pid paths are dropped —
@@ -313,6 +320,11 @@ class SshRayBackend(ExecutionBackend):
         self._sweep_stop.set()
         if self._sweeper is not None:
             self._sweeper.join(timeout=self._sweep_interval_s + 5.0)
+            if self._sweeper.is_alive():
+                # ponytail: sweeper stuck in a slow SSH reconcile; we proceed to kill
+                # the runtime anyway — its next ray.get fails and the daemon thread
+                # exits. Bounded per-host reconcile timeouts if this proves noisy.
+                _log.warning("lease-sweeper did not stop within timeout; proceeding with teardown")
             self._sweeper = None
         if self._actor is not None:
             ray.kill(self._actor)
