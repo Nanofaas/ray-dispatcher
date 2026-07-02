@@ -15,9 +15,10 @@ import shlex
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from .digests import environment_digest, runner_digest, source_digest
-from .errors import HostInUseError, NoHealthyHostsError, ProvisioningError
+from .errors import ConfigurationError, HostInUseError, NoHealthyHostsError, ProvisioningError
 from .locking import HeartbeatThread, SessionLock
 from .models import HostProvisioningResult, Inventory, Project, ProvisioningReport, RemoteHost
 from .ssh import CommandResult, SshConfig, SshTransport, Transport
@@ -406,6 +407,12 @@ def provision(
     session_id: str | None = None,
     min_disk_mb: int = 500,
 ) -> ProvisioningOutcome:
+    for fname in ("pyproject.toml", "uv.lock"):
+        if not Path(project.path, fname).is_file():
+            raise ConfigurationError(
+                f"project at {project.path} is missing {fname} "
+                "(required to compute the environment digest, §6.2)"
+            )
     factory = transport_factory or _default_transport
     sid = session_id or _secrets.token_hex(16)
 
