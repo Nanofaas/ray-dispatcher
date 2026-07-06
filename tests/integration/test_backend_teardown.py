@@ -48,6 +48,9 @@ class _Recorder:
     def release(self):
         self.calls.append("release")
 
+    def set_failure_callback(self, callback):
+        pass
+
 
 def _canned_outcome(host_name, session):
     report = ProvisioningReport((HostProvisioningResult(host_name, True, "src123", "env123"),))

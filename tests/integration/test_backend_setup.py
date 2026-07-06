@@ -97,6 +97,9 @@ class _SessionRecorder:
     def release(self):
         self.calls.append("release")
 
+    def set_failure_callback(self, callback):
+        pass
+
 
 def test_setup_releases_provisioned_sessions_when_runtime_build_fails(monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu"),))

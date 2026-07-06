@@ -24,6 +24,7 @@ from .errors import (
     HostInUseError,
     NoHealthyHostsError,
     ProvisioningError,
+    SessionLockLostError,
 )
 from .locking import HeartbeatThread, SessionLock
 from .models import HostProvisioningResult, Inventory, Project, ProvisioningReport, RemoteHost
@@ -358,12 +359,19 @@ class HostProvisioner:
         env_dig: str | None = None
         try:
             self.layout = self._resolve_layout()
+            hb.raise_if_failed()
             self._preflight()
+            hb.raise_if_failed()
             uv = self._install_uv()
+            hb.raise_if_failed()
             self._install_python(uv)
+            hb.raise_if_failed()
             source_dig = self._sync_source()
+            hb.raise_if_failed()
             env_dig = self._publish_env(uv)
+            hb.raise_if_failed()
             self._install_runner()
+            hb.raise_if_failed()
             self._copy_secrets()
             hb.raise_if_failed()
         except Exception as exc:  # noqa: BLE001 — any step failure marks the host unhealthy
@@ -399,6 +407,12 @@ class ProvisioningOutcome:
     def raise_if_session_lost(self) -> None:
         for _, heartbeat in self.sessions.values():
             heartbeat.raise_if_failed()
+
+    def set_session_loss_callback(
+        self, callback: Callable[[SessionLockLostError], None]
+    ) -> None:
+        for _, heartbeat in self.sessions.values():
+            heartbeat.set_failure_callback(callback)
 
     def release_all(self) -> None:
         sessions = self.sessions

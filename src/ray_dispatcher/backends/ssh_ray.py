@@ -195,18 +195,33 @@ class SshRayBackend(ExecutionBackend):
         self._inv_hosts: dict[str, RemoteHost] = {}
         self._refs: dict[str, object] = {}
         self._submitted: set[tuple[str, str]] = set()
+        self._session_loss: SessionLockLostError | None = None
+        self._session_loss_lock = threading.Lock()
+
+    def _on_session_lost(self, error: SessionLockLostError) -> None:
+        with self._session_loss_lock:
+            if self._session_loss is not None:
+                return
+            self._session_loss = error
+            refs = list(self._refs.values())
+        for ref in refs:
+            try:
+                ray.cancel(ref)
+            except BaseException:
+                _log.exception("failed to cancel task after session lock loss")
 
     def _fail_if_session_lost(self) -> None:
+        with self._session_loss_lock:
+            error = self._session_loss
+        if error is not None:
+            raise error
         if self._outcome is None:
             return
         try:
             self._outcome.raise_if_session_lost()
-        except SessionLockLostError:
-            try:
-                self.teardown()
-            except BaseException:
-                _log.exception("failed to tear down after session lock loss")
-            raise
+        except SessionLockLostError as exc:
+            self._on_session_lost(exc)
+            raise exc
 
     def setup(
         self, inventory: Inventory, project: Project, *, force: bool = False
@@ -216,6 +231,8 @@ class SshRayBackend(ExecutionBackend):
                 "a Ray runtime is already initialized; ray_dispatcher owns its own "
                 "local runtime and will not attach to an external one (§3.2)"
             )
+        with self._session_loss_lock:
+            self._session_loss = None
         # Provision first; provision() raises NoHealthyHostsError if none succeed,
         # so Ray is never started for an empty healthy set (§3.2.2).
         outcome = provision(
@@ -226,6 +243,7 @@ class SshRayBackend(ExecutionBackend):
         )
         self._outcome = outcome
         try:
+            outcome.set_session_loss_callback(self._on_session_lost)
             outcome.raise_if_session_lost()
             runner_dig = runner_digest(self._runner_path)
             healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
@@ -236,6 +254,7 @@ class SshRayBackend(ExecutionBackend):
                 host_name: self._build_runtime(project, result, inv_hosts[host_name], runner_dig)
                 for host_name, result in healthy.items()
             }
+            self._fail_if_session_lost()
             ray.init(
                 address="local",
                 namespace=f"ray-dispatcher-{secrets.token_hex(8)}",
@@ -251,6 +270,7 @@ class SshRayBackend(ExecutionBackend):
                 target=self._sweep_loop, daemon=True, name="lease-sweeper"
             )
             self._sweeper.start()
+            self._fail_if_session_lost()
             return outcome.report
         except BaseException:
             self._sweep_stop.set()
@@ -335,6 +355,12 @@ class SshRayBackend(ExecutionBackend):
         )
         self._refs[token] = ref
         self._submitted.add((batch_id, job.id))
+        try:
+            self._fail_if_session_lost()
+        except BaseException:
+            self._refs.pop(token, None)
+            ray.cancel(ref)
+            raise
         return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
 
     def status(self, handle: JobHandle) -> JobStatus:

@@ -132,14 +132,20 @@ class HeartbeatThread(threading.Thread):
         self._stopped = threading.Event()
         self._failed = threading.Event()
         self._failure: SessionLockLostError | None = None
+        self._failure_callback: Callable[[SessionLockLostError], None] | None = None
+        self._failure_lock = threading.Lock()
 
     def run(self) -> None:
         while not self._stopped.wait(self._interval):
             try:
                 self._lock.heartbeat()
             except SessionLockLostError as exc:
-                self._failure = exc
-                self._failed.set()
+                with self._failure_lock:
+                    self._failure = exc
+                    self._failed.set()
+                    callback = self._failure_callback
+                if callback is not None:
+                    callback(exc)
                 return
             except Exception:  # noqa: BLE001 — heartbeat is best-effort; TTL is the net
                 pass
@@ -148,6 +154,15 @@ class HeartbeatThread(threading.Thread):
         if self._failed.is_set():
             assert self._failure is not None
             raise self._failure
+
+    def set_failure_callback(
+        self, callback: Callable[[SessionLockLostError], None]
+    ) -> None:
+        with self._failure_lock:
+            self._failure_callback = callback
+            failure = self._failure
+        if failure is not None:
+            callback(failure)
 
     def stop(self) -> None:
         self._stopped.set()
