@@ -15,9 +15,11 @@ def test_quarantine_captures_registered_pid_paths():
     pool.register_pid(a.token, "/runs/b/ja/1/pid.json")
     pool.register_pid(b.token, "/runs/b/jb/1/pid.json")
     pool.quarantine("h1")
-    orphans = pool.take_orphans("h1")
+    orphans = pool.orphan_paths("h1")
     assert sorted(orphans) == ["/runs/b/ja/1/pid.json", "/runs/b/jb/1/pid.json"]
-    assert pool.take_orphans("h1") == []  # popped: second take is empty
+    assert pool.orphan_paths("h1") == orphans  # failed reconciliation must be retryable
+    pool.mark_reconciled("h1")
+    assert pool.orphan_paths("h1") == []
 
 
 def test_release_clears_pid_path_no_orphan():
@@ -26,11 +28,11 @@ def test_release_clears_pid_path_no_orphan():
     pool.register_pid(lease.token, "/runs/b/ja/1/pid.json")
     pool.release(lease.token)
     pool.quarantine(lease.host)
-    assert pool.take_orphans(lease.host) == []  # released cleanly -> nothing orphaned
+    assert pool.orphan_paths(lease.host) == []  # released cleanly -> nothing orphaned
 
 
 def test_register_pid_unknown_token_is_noop():
     pool = _pool()
     pool.register_pid("ghost", "/runs/x/pid.json")  # must not raise
     pool.quarantine("h1")
-    assert pool.take_orphans("h1") == []
+    assert pool.orphan_paths("h1") == []

@@ -1,10 +1,12 @@
 import json
 import threading
 
+import pytest
+
 from ray_dispatcher.models import FailureKind, Job, JobStatus
 from ray_dispatcher.provisioning import RemoteLayout
 from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime, execute_attempt
+from ray_dispatcher.scheduling import HostRuntime, _HostCleanupError, execute_attempt
 from ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
@@ -107,3 +109,27 @@ def test_timeout_attempt_writes_attempt_json_and_pulls_logs(tmp_path):
     # best-effort log pull was attempted (FakeTransport records pull calls)
     pulled = [c for c in transport.calls if c[0] == "pull"]
     assert len(pulled) == 2  # stdout + stderr
+
+
+def test_timeout_fails_closed_when_pid_never_appears(tmp_path):
+    runner_done = threading.Event()
+
+    def results(argv: list[str]) -> CommandResult:
+        if argv[0] == "python3":
+            runner_done.wait(timeout=2.0)
+            return CommandResult(0, "", "", 0.0)
+        if argv[0] == "cat":
+            return CommandResult(1, "", "missing", 0.0)
+        return CommandResult(0, "", "", 0.0)
+
+    try:
+        with pytest.raises(_HostCleanupError) as exc:
+            execute_attempt(
+                FakeTransport(run_results=results), _runtime(),
+                Job(id="j3", command=("sleep", "99"), timeout_s=0.01),
+                batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j3"),
+            )
+        assert exc.value.result is not None
+        assert exc.value.result.status is JobStatus.TIMED_OUT
+    finally:
+        runner_done.set()

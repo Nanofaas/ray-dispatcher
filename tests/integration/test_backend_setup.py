@@ -82,3 +82,53 @@ def test_setup_with_require_all_hosts_fails_before_ray_starts(monkeypatch):
         backend.setup(inv, proj)
     assert captured.get("require_all_hosts") is True  # flag reached provision()
     assert not ray.is_initialized()  # Ray never started, nothing leaked
+
+
+class _SessionRecorder:
+    def __init__(self):
+        self.calls = []
+
+    def stop(self):
+        self.calls.append("stop")
+
+    def release(self):
+        self.calls.append("release")
+
+
+def test_setup_releases_provisioned_sessions_when_runtime_build_fails(monkeypatch):
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu"),))
+    rec = _SessionRecorder()
+    outcome = _canned_outcome("10.0.0.1")
+    outcome.sessions = {"host": (rec, rec)}
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: outcome)
+    backend = SshRayBackend(transport_factory=lambda h: (_ for _ in ()).throw(RuntimeError("home")))
+
+    with pytest.raises(RuntimeError, match="home"):
+        backend.setup(inv, _project())
+
+    assert rec.calls == ["stop", "release"]
+    assert backend._outcome is None
+
+
+def test_setup_shuts_down_runtime_and_releases_sessions_when_actor_creation_fails(monkeypatch):
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu"),))
+    rec = _SessionRecorder()
+    outcome = _canned_outcome("10.0.0.1")
+    outcome.sessions = {"host": (rec, rec)}
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: outcome)
+    initialized = {"value": False}
+    monkeypatch.setattr(ssh_ray.ray, "is_initialized", lambda: initialized["value"])
+    monkeypatch.setattr(ssh_ray.ray, "init", lambda **k: initialized.update(value=True))
+    monkeypatch.setattr(ssh_ray.ray, "shutdown", lambda: initialized.update(value=False))
+    monkeypatch.setattr(
+        ssh_ray.HostLease, "remote", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("actor"))
+    )
+    backend = SshRayBackend(transport_factory=_home_transport)
+
+    with pytest.raises(RuntimeError, match="actor"):
+        backend.setup(inv, _project())
+
+    assert not initialized["value"]
+    assert rec.calls == ["stop", "release"]
+    assert backend._outcome is None
+    assert backend._actor is None

@@ -1,9 +1,16 @@
 import json
 
-from ray_dispatcher.models import FailureKind, Job, JobStatus, RetryPolicy
+import pytest
+
+from ray_dispatcher.models import AttemptResult, FailureKind, Job, JobStatus, RetryPolicy
 from ray_dispatcher.provisioning import RemoteLayout
 from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime, Lease, run_job
+from ray_dispatcher.scheduling import (
+    HostRuntime,
+    Lease,
+    _HostCleanupError,
+    run_job,
+)
 from ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError
 
 
@@ -14,6 +21,7 @@ class FakeLease:
         self._hosts = list(hosts)
         self._n = 0
         self.excludes = []
+        self.quarantined = []
 
     def acquire(self, attempt_id, *, exclude=()):
         self.excludes.append(set(exclude))
@@ -27,6 +35,9 @@ class FakeLease:
 
     def register_pid(self, token, pid_path):
         pass
+
+    def quarantine(self, host):
+        self.quarantined.append(host)
 
 
 def _runtime(host):
@@ -103,3 +114,40 @@ def test_command_failure_is_not_retried(tmp_path):
     assert r.returncode == 3
     assert r.attempts[-1].failure_kind is FailureKind.COMMAND
     assert len(r.attempts) == 1              # COMMAND not retried
+
+
+def test_unclean_timeout_quarantines_host(monkeypatch, tmp_path):
+    lease = FakeLease(["a"])
+    timed_out = AttemptResult(
+        number=1, host="a", status=JobStatus.TIMED_OUT, returncode=None,
+        duration_s=0.1, stdout_log="out", stderr_log="err",
+        failure_kind=FailureKind.TIMEOUT, error="job timed out",
+    )
+    monkeypatch.setattr(
+        "ray_dispatcher.scheduling.execute_attempt",
+        lambda *a, **k: (_ for _ in ()).throw(_HostCleanupError(result=timed_out)),
+    )
+    result = run_job(
+        Job(id="jobA", command=("sleep", "9"), timeout_s=0.1),
+        batch_id="b1", lease=lease, runtime_for=_runtime,
+        transport_for=lambda h: _ok_transport(), local=_layout(tmp_path),
+        policy=RetryPolicy(),
+    )
+    assert result.status is JobStatus.TIMED_OUT
+    assert lease.quarantined == ["a"]
+
+
+def test_unclean_cancel_quarantines_then_preserves_interrupt(monkeypatch, tmp_path):
+    lease = FakeLease(["a"])
+    interrupt = KeyboardInterrupt()
+    monkeypatch.setattr(
+        "ray_dispatcher.scheduling.execute_attempt",
+        lambda *a, **k: (_ for _ in ()).throw(_HostCleanupError(interrupted=interrupt)),
+    )
+    with pytest.raises(KeyboardInterrupt):
+        run_job(
+            Job(id="jobA", command=("sleep", "9")), batch_id="b1", lease=lease,
+            runtime_for=_runtime, transport_for=lambda h: _ok_transport(),
+            local=_layout(tmp_path), policy=RetryPolicy(),
+        )
+    assert lease.quarantined == ["a"]

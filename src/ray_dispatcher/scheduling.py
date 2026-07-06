@@ -156,9 +156,9 @@ class LeasePool:
         if token in self._leases:
             self._pid_paths[token] = pid_path
 
-    def take_orphans(self, host: str) -> list[str]:
-        """Pop the pid paths of leases this host lost to quarantine."""
-        return self._orphans.pop(host, [])
+    def orphan_paths(self, host: str) -> list[str]:
+        """Snapshot pid paths without consuming reconciliation work."""
+        return list(self._orphans.get(host, ()))
 
     def heartbeat(self, token: str) -> bool:
         lease = self._leases.get(token)
@@ -180,6 +180,7 @@ class LeasePool:
                 self._orphans.setdefault(host, []).append(pid_path)
 
     def mark_reconciled(self, host: str) -> None:
+        self._orphans.pop(host, None)
         self._quarantined.discard(host)
 
     def sweep_expired(self) -> list[str]:
@@ -278,15 +279,40 @@ def build_runner_manifest(
     }
 
 
-def _kill_remote_pgid(transport: Transport, pid_path: str) -> None:
-    """Best-effort SIGTERM→SIGKILL of the remote process group recorded in pid_path (§8.1)."""
-    try:
-        result = transport.run(["cat", pid_path])
-        pgid = _parse_pgid(result.stdout) if result.returncode == 0 else None
-        if pgid is not None:
-            terminate_process_group(transport, pgid, grace_s=10.0)
-    except Exception:
-        pass  # pid file absent or unreadable: nothing to kill
+class _HostCleanupError(Exception):
+    """Remote process cleanup was not confirmed; the host must be quarantined."""
+
+    def __init__(
+        self,
+        *,
+        result: AttemptResult | None = None,
+        interrupted: BaseException | None = None,
+    ) -> None:
+        super().__init__("remote process cleanup could not be confirmed")
+        self.result = result
+        self.interrupted = interrupted
+
+
+def _kill_remote_pgid(
+    transport: Transport,
+    pid_path: str,
+    *,
+    pid_wait_s: float = 0.5,
+    poll_s: float = 0.05,
+) -> bool:
+    """Terminate the recorded process group, waiting briefly for pid.json creation."""
+    deadline = time.monotonic() + pid_wait_s
+    while True:
+        try:
+            result = transport.run(["cat", pid_path])
+            pgid = _parse_pgid(result.stdout) if result.returncode == 0 else None
+            if pgid is not None:
+                return terminate_process_group(transport, pgid, grace_s=10.0)
+        except Exception:
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_s)
 
 
 def _run_checked(transport: Transport, argv: list[str], what: str) -> CommandResult:
@@ -374,7 +400,7 @@ def execute_attempt(
 
             if _t.is_alive():
                 # Timed out — best-effort terminate the remote process group (§8.1).
-                _kill_remote_pgid(transport, run.pid)
+                cleaned = _kill_remote_pgid(transport, run.pid)
                 # ponytail: the _invoke thread stays blocked on its SSH call until
                 # the remote process dies; acceptable leak, transports are per-attempt.
                 for remote, local_log in (
@@ -397,14 +423,19 @@ def execute_attempt(
                     error="job timed out",
                 )
                 write_attempt_json(local.attempt_json(attempt), result)
+                if not cleaned:
+                    raise _HostCleanupError(result=result)
                 return result
 
             if _exc:
                 raise _exc[0]  # re-raise SSH/dispatcher exception from the thread
         else:
             _run_checked(transport, ["python3", runner, run.manifest], "invoke runner")
-    except BaseException:
-        _kill_remote_pgid(transport, run.pid)
+    except _HostCleanupError:
+        raise
+    except BaseException as exc:
+        if not _kill_remote_pgid(transport, run.pid):
+            raise _HostCleanupError(interrupted=exc) from exc
         raise
     # parse the runner's result.json (returncode + monotonic duration, §7).
     info = json.loads(_run_checked(transport, ["cat", run.result], "read result").stdout)
@@ -490,6 +521,8 @@ class LeaseHandle(Protocol):
 
     def register_pid(self, token: str, pid_path: str) -> None: ...
 
+    def quarantine(self, host: str) -> None: ...
+
 
 def _failed_attempt(
     n: int, host: str, kind: FailureKind, error: str, local: JobLayout
@@ -546,6 +579,22 @@ def run_job(
                 transport_for(leased.host), runtime, job,
                 batch_id=batch_id, attempt=n, local=local,
             )
+        except _HostCleanupError as e:
+            lease.quarantine(leased.host)
+            if e.result is not None:
+                result = e.result
+            elif isinstance(e.interrupted, TransportError):
+                result = _failed_attempt(
+                    n, leased.host, FailureKind.SSH, str(e.interrupted), local
+                )
+            elif isinstance(e.interrupted, DispatcherError):
+                result = _failed_attempt(
+                    n, leased.host, FailureKind.INTERNAL, str(e.interrupted), local
+                )
+            elif e.interrupted is not None:
+                raise e.interrupted from e
+            else:  # pragma: no cover - constructor invariant at call sites
+                raise RuntimeError("cleanup error missing outcome") from e
         except TransportError as e:
             result = _failed_attempt(n, leased.host, FailureKind.SSH, str(e), local)
         except DispatcherError as e:
@@ -633,6 +682,6 @@ class LeaseService:
         async with self._cond:
             self._pool.register_pid(token, pid_path)
 
-    async def take_orphans(self, host: str) -> list[str]:
+    async def orphan_paths(self, host: str) -> list[str]:
         async with self._cond:
-            return self._pool.take_orphans(host)
+            return self._pool.orphan_paths(host)

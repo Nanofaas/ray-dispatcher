@@ -8,6 +8,7 @@ and shut down at teardown.
 from __future__ import annotations
 
 import logging
+import math
 import secrets
 import threading
 import uuid
@@ -17,7 +18,7 @@ from typing import cast
 import ray
 
 from ..digests import runner_digest
-from ..errors import DispatcherError, RayRuntimeConflictError
+from ..errors import DispatcherError, ModelValidationError, RayRuntimeConflictError
 from ..models import (
     HostProvisioningResult,
     Inventory,
@@ -81,6 +82,9 @@ class _ActorLeaseHandle:
 
     def register_pid(self, token: str, pid_path: str) -> None:
         ray.get(self._actor.register_pid.remote(token, pid_path))
+
+    def quarantine(self, host: str) -> None:
+        ray.get(self._actor.quarantine.remote(host))
 
     def _heartbeat(self, token: str) -> None:
         while not self._stop.wait(self._heartbeat_interval_s):
@@ -155,6 +159,19 @@ class SshRayBackend(ExecutionBackend):
     ) -> None:
         from .. import remote_runner
 
+        if isinstance(min_disk_mb, bool) or not isinstance(min_disk_mb, int) or min_disk_mb < 0:
+            raise ModelValidationError("min_disk_mb must be a non-negative integer")
+        for name, value in (
+            ("lease_ttl_s", lease_ttl_s),
+            ("sweep_interval_s", sweep_interval_s),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ModelValidationError(f"{name} must be finite and > 0")
         self._runner_path = runner_path or remote_runner.__file__
         self._transport_factory = transport_factory or _default_transport
         self._retry_policy = retry_policy
@@ -162,6 +179,7 @@ class SshRayBackend(ExecutionBackend):
         self._results_dir = results_dir
         self._require_all_hosts = require_all_hosts
         self._lease_ttl_s = lease_ttl_s
+        self._heartbeat_interval_s = min(5.0, lease_ttl_s / 3.0)
         self._sweep_interval_s = sweep_interval_s
         self._sweep_stop = threading.Event()
         self._sweeper: threading.Thread | None = None
@@ -171,6 +189,7 @@ class SshRayBackend(ExecutionBackend):
         self._runtimes: dict[str, HostRuntime] = {}
         self._inv_hosts: dict[str, RemoteHost] = {}
         self._refs: dict[str, object] = {}
+        self._submitted: set[tuple[str, str]] = set()
 
     def setup(
         self, inventory: Inventory, project: Project, *, force: bool = False
@@ -189,32 +208,45 @@ class SshRayBackend(ExecutionBackend):
             require_all_hosts=self._require_all_hosts, force=force,
         )
         self._outcome = outcome
-        runner_dig = runner_digest(self._runner_path)
-        healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
-        inv_hosts = {h.host: h for h in inventory.hosts}
-        slots = {name: inv_hosts[name].slots for name in healthy}
-        self._inv_hosts = inv_hosts
-        self._runtimes = {
-            host_name: self._build_runtime(project, result, inv_hosts[host_name], runner_dig)
-            for host_name, result in healthy.items()
-        }
-        ray.init(
-            address="local",
-            namespace=f"ray-dispatcher-{secrets.token_hex(8)}",  # unique per session (§3.2.2)
-            resources={"vm_slot": float(sum(slots.values()))},
-            # Exclude pyproject.toml / lockfiles from the working_dir package Ray auto-uploads
-            # so workers don't attempt `uv sync` with relative editable paths that only
-            # resolve at the caller's site (e.g. `editable+../../` inside examples/).
-            runtime_env={"excludes": ["pyproject.toml", "uv.lock", "*.lock"]},
-        )
-        self._owns_runtime = True
-        self._actor = HostLease.remote(slots, lease_ttl_s=self._lease_ttl_s)  # type: ignore[assignment]
-        self._sweep_stop.clear()
-        self._sweeper = threading.Thread(
-            target=self._sweep_loop, daemon=True, name="lease-sweeper"
-        )
-        self._sweeper.start()
-        return outcome.report
+        try:
+            runner_dig = runner_digest(self._runner_path)
+            healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
+            inv_hosts = {h.host: h for h in inventory.hosts}
+            slots = {name: inv_hosts[name].slots for name in healthy}
+            self._inv_hosts = inv_hosts
+            self._runtimes = {
+                host_name: self._build_runtime(project, result, inv_hosts[host_name], runner_dig)
+                for host_name, result in healthy.items()
+            }
+            ray.init(
+                address="local",
+                namespace=f"ray-dispatcher-{secrets.token_hex(8)}",
+                resources={"vm_slot": float(sum(slots.values()))},
+                runtime_env={"excludes": ["pyproject.toml", "uv.lock", "*.lock"]},
+            )
+            self._owns_runtime = True
+            self._actor = HostLease.remote(  # type: ignore[assignment]
+                slots, lease_ttl_s=self._lease_ttl_s
+            )
+            self._sweep_stop.clear()
+            self._sweeper = threading.Thread(
+                target=self._sweep_loop, daemon=True, name="lease-sweeper"
+            )
+            self._sweeper.start()
+            return outcome.report
+        except BaseException:
+            self._sweep_stop.set()
+            if self._actor is not None:
+                ray.kill(self._actor)
+                self._actor = None
+            outcome.release_all()
+            self._outcome = None
+            self._runtimes = {}
+            self._inv_hosts = {}
+            if self._owns_runtime or ray.is_initialized():
+                ray.shutdown()
+            self._owns_runtime = False
+            raise
 
     def _sweep_loop(self) -> None:
         while not self._sweep_stop.wait(self._sweep_interval_s):
@@ -233,7 +265,7 @@ class SshRayBackend(ExecutionBackend):
             return
         ray.get(actor.sweep.remote())
         for host in ray.get(actor.quarantined_hosts.remote()):
-            pid_paths = ray.get(actor.take_orphans.remote(host))
+            pid_paths = ray.get(actor.orphan_paths.remote(host))
             transport = self._transport_factory(self._inv_hosts[host])
             try:
                 clean = all(reconcile_host(transport, p) for p in pid_paths)
@@ -244,9 +276,6 @@ class SshRayBackend(ExecutionBackend):
                 )
             if clean:
                 ray.get(actor.mark_reconciled.remote(host))
-            # ponytail: on a failed reconcile the popped pid paths are dropped —
-            # the host stays quarantined until a later sweep finds it clean by
-            # probe; re-register orphans if partial-kill recovery ever matters.
 
     def _build_runtime(
         self, project: Project, result: HostProvisioningResult, host: RemoteHost, runner_dig: str
@@ -272,8 +301,10 @@ class SshRayBackend(ExecutionBackend):
         ref = _attempt_task.remote(
             job, batch_id, local, self._runtimes, self._inv_hosts,
             self._actor, self._transport_factory, self._retry_policy,
+            self._heartbeat_interval_s,
         )
         self._refs[token] = ref
+        self._submitted.add((batch_id, job.id))
         return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
 
     def status(self, handle: JobHandle) -> JobStatus:
@@ -313,9 +344,26 @@ class SshRayBackend(ExecutionBackend):
             return {}
         return cast(dict[str, str], ray.get(self._actor.current_hosts.remote()))
 
+    def _purge_remote_state(self) -> list[str]:
+        errors: list[str] = []
+        for host_name, runtime in self._runtimes.items():
+            paths = [runtime.layout.project, runtime.layout.secrets]
+            paths.extend(
+                f"{runtime.layout.root}/runs/{batch_id}/{job_id}"
+                for batch_id, job_id in sorted(self._submitted)
+            )
+            try:
+                result = self._transport_factory(self._inv_hosts[host_name]).run(
+                    ["rm", "-rf", *paths]
+                )
+                if result.returncode != 0:
+                    errors.append(f"{host_name}: {result.stderr.strip() or result.stdout.strip()}")
+            except Exception as exc:  # noqa: BLE001 — continue cleanup on other hosts
+                errors.append(f"{host_name}: {exc}")
+        return errors
+
     def teardown(self, *, purge: bool = False) -> None:
-        # ponytail: purge + cancel/reconcile of outstanding attempts land in 6c/6d;
-        # this slice does the runtime + lock release (§10.2,4,5).
+        purge_errors: list[str] = []
         self._sweep_stop.set()
         if self._sweeper is not None:
             self._sweeper.join(timeout=self._sweep_interval_s + 5.0)
@@ -328,8 +376,17 @@ class SshRayBackend(ExecutionBackend):
         if self._actor is not None:
             ray.kill(self._actor)
             self._actor = None
+        if purge:
+            purge_errors = self._purge_remote_state()
         if self._outcome is not None:
             self._outcome.release_all()
+            self._outcome = None
         if self._owns_runtime:
             ray.shutdown()
             self._owns_runtime = False
+        self._runtimes = {}
+        self._inv_hosts = {}
+        self._refs = {}
+        self._submitted = set()
+        if purge_errors:
+            raise DispatcherError("remote purge failed: " + "; ".join(purge_errors))

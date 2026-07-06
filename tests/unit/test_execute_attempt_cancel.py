@@ -3,7 +3,7 @@ import pytest
 from ray_dispatcher.models import Job
 from ray_dispatcher.provisioning import RemoteLayout
 from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime, execute_attempt
+from ray_dispatcher.scheduling import HostRuntime, _HostCleanupError, execute_attempt
 from ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
@@ -52,9 +52,7 @@ def test_kills_remote_pgid_when_baseexception_interrupts_runner(tmp_path):
     )
 
 
-def test_baseexception_propagates_even_when_pid_file_absent(tmp_path):
-    """If the pid file doesn't exist yet, _kill_remote_pgid is best-effort:
-    the original BaseException still propagates (not swallowed, not replaced)."""
+def test_missing_pid_marks_host_cleanup_unconfirmed(tmp_path):
 
     def results(argv: list[str]) -> CommandResult:
         if argv[0] == "python3":
@@ -66,11 +64,12 @@ def test_baseexception_propagates_even_when_pid_file_absent(tmp_path):
     transport = FakeTransport(run_results=results)
     job = Job(id="j2", command=("python", "script.py"))
 
-    with pytest.raises(KeyboardInterrupt):
+    with pytest.raises(_HostCleanupError) as exc:
         execute_attempt(
             transport, _runtime(), job,
             batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j2"),
         )
+    assert isinstance(exc.value.interrupted, KeyboardInterrupt)
 
     sent = [c[1] for c in transport.calls if c[0] == "run"]
     assert not any(a[0] == "kill" and "-TERM" in a for a in sent)
