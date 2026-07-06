@@ -92,6 +92,7 @@ class RemoteLayout:
         self.source = f"{self.project}/source"
         self.source_manifest = f"{self.project}/source-manifest.json"
         self.secrets = f"{self.root}/secrets/{project_id}"
+        self.runs = f"{self.root}/runs/{project_id}"
         self.uv_root = f"{self.root}/uv"
 
     def env_dir(self, environment_digest: str) -> str:
@@ -113,7 +114,7 @@ class RemoteLayout:
         return f"{self.uv_root}/{uv_version}/uv"
 
     def run_dir(self, batch_id: str, job_id: str, attempt: int) -> str:
-        return f"{self.root}/runs/{batch_id}/{job_id}/{attempt}"
+        return f"{self.runs}/{batch_id}/{job_id}/{attempt}"
 
     def run_paths(self, batch_id: str, job_id: str, attempt: int) -> RunPaths:
         return RunPaths(self.run_dir(batch_id, job_id, attempt))

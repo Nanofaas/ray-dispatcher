@@ -3,7 +3,14 @@ from ray_dispatcher.provisioning import RemoteLayout, RunPaths
 
 def test_run_dir_under_root():
     lo = RemoteLayout("/home/ubuntu", "dfaas")
-    assert lo.run_dir("b1", "jobA", 2) == "/home/ubuntu/.ray_dispatcher/runs/b1/jobA/2"
+    assert lo.run_dir("b1", "jobA", 2) == "/home/ubuntu/.ray_dispatcher/runs/dfaas/b1/jobA/2"
+
+
+def test_run_dir_is_project_namespaced():
+    first = RemoteLayout("/home/ubuntu", "first").run_dir("batch", "job", 1)
+    second = RemoteLayout("/home/ubuntu", "second").run_dir("batch", "job", 1)
+
+    assert first != second
 
 
 def test_run_paths_layout():

@@ -86,7 +86,7 @@ def test_teardown_purge_removes_only_project_and_submitted_job_state():
     runs = [call[1] for call in transport.calls if call[0] == "run"]
     assert runs == [(
         "rm", "-rf", layout.project, layout.secrets,
-        f"{layout.root}/runs/batch/job",
+        f"{layout.root}/runs/dfaas/batch/job",
     )]
 
 

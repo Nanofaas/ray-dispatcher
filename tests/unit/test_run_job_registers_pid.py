@@ -50,7 +50,7 @@ def test_run_job_registers_pid_path_after_acquire(tmp_path):
     )
     assert result.status is JobStatus.SUCCEEDED
     assert lease.registered == [
-        ("t1", "/home/u/.ray_dispatcher/runs/b1/j1/1/pid.json")
+        ("t1", "/home/u/.ray_dispatcher/runs/proj/b1/j1/1/pid.json")
     ]
 
 
