@@ -1,29 +1,66 @@
-"""Atomic, heartbeat-backed remote session lock (spec §3.2.6, §6.3.1).
-
-Drives a remote lock entirely through the Phase 2 Transport seam. Every command
-is an ``sh -c`` script so the VM shell expands ``$HOME``; all data is shlex-quoted.
-The lock is one file, created atomically via shell ``noclobber`` (``set -C``).
-"""
+"""Atomic, heartbeat-backed remote session lock (spec §3.2.6, §6.3.1)."""
 
 from __future__ import annotations
 
 import json
-import shlex
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
 
 from .errors import HostInUseError
-from .ssh import Transport
+from .ssh import Transport, TransportError
 
-_LOCK_DIR = '"$HOME/.ray_dispatcher/locks"'
-_LOCK_FILE = '"$HOME/.ray_dispatcher/locks/session.json"'
-_LOCK_TMP = '"$HOME/.ray_dispatcher/locks/.session.json.tmp"'
+_CONFLICT = 3
+_LOCK_SCRIPT = r"""
+import fcntl
+import json
+import os
+import sys
+import tempfile
 
+action, session_id, now_raw, ttl_raw = sys.argv[1:]
+now = float(now_raw)
+ttl = float(ttl_raw)
+lock_dir = os.path.join(os.environ["HOME"], ".ray_dispatcher", "locks")
+owner_path = os.path.join(lock_dir, "session.json")
+guard_path = os.path.join(lock_dir, ".session.guard")
+os.makedirs(lock_dir, exist_ok=True)
 
-def _sh(script: str) -> list[str]:
-    return ["sh", "-c", script]
+with open(guard_path, "a", encoding="utf-8") as guard:
+    fcntl.flock(guard, fcntl.LOCK_EX)
+    try:
+        with open(owner_path, encoding="utf-8") as owner_file:
+            owner = json.load(owner_file)
+    except (FileNotFoundError, json.JSONDecodeError, UnicodeError):
+        owner = None
+
+    owned = isinstance(owner, dict) and owner.get("session_id") == session_id
+    if action == "acquire" and not owned and isinstance(owner, dict):
+        try:
+            live = now - float(owner.get("heartbeat", 0)) <= ttl
+        except (TypeError, ValueError):
+            live = False
+        if live:
+            print(owner.get("session_id", ""))
+            raise SystemExit(3)
+
+    if action in {"acquire", "heartbeat"} and (action == "acquire" or owned):
+        fd, temporary = tempfile.mkstemp(prefix=".session.", dir=lock_dir)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as temporary_file:
+                json.dump({"session_id": session_id, "heartbeat": now}, temporary_file)
+            os.replace(temporary, owner_path)
+        finally:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+    elif action == "release" and owned:
+        try:
+            os.unlink(owner_path)
+        except FileNotFoundError:
+            pass
+"""
 
 
 class SessionLock:
@@ -43,63 +80,38 @@ class SessionLock:
     def _payload(self) -> str:
         return json.dumps({"session_id": self.session_id, "heartbeat": self.now()})
 
-    def _read_owner(self) -> dict[str, Any] | None:
-        result = self.transport.run(_sh(f"cat {_LOCK_FILE} 2>/dev/null"))
-        if result.returncode != 0 or not result.stdout.strip():
-            return None
-        try:
-            data = json.loads(result.stdout)
-        except json.JSONDecodeError:
-            return None
-        return data if isinstance(data, dict) else None
-
-    def _write_owner(self) -> None:
-        owner = shlex.quote(self._payload())
-        self.transport.run(
-            _sh(f"printf %s {owner} > {_LOCK_TMP} && mv -f {_LOCK_TMP} {_LOCK_FILE}")
+    def _operate(self, action: str) -> None:
+        result = self.transport.run(
+            [
+                "python3",
+                "-c",
+                _LOCK_SCRIPT,
+                action,
+                self.session_id,
+                str(self.now()),
+                str(self.ttl_s),
+            ]
         )
-
-    def _take_over(self) -> None:
-        """Overwrite a stale/corrupt lock, then confirm we actually won the write race."""
-        self._write_owner()
-        confirmed = self._read_owner()
-        if confirmed is None or confirmed.get("session_id") != self.session_id:
-            winner = confirmed.get("session_id") if confirmed else None
-            raise HostInUseError(f"lost session-lock takeover race to {winner!r}")
+        if result.returncode == 0:
+            return
+        if action == "acquire" and result.returncode == _CONFLICT:
+            raise HostInUseError(
+                f"session lock held by {result.stdout.strip()!r}"
+            )
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise TransportError(
+            f"session-lock {action} failed ({result.returncode}): {detail}",
+            returncode=result.returncode,
+        )
 
     def acquire(self) -> None:
-        self.transport.run(_sh(f"mkdir -p {_LOCK_DIR}"))
-        owner = shlex.quote(self._payload())
-        created = self.transport.run(_sh(f"set -C; printf %s {owner} > {_LOCK_FILE}"))
-        if created.returncode == 0:
-            return  # created atomically -> we own it
-        existing = self._read_owner()
-        if existing is not None and existing.get("session_id") == self.session_id:
-            self._write_owner()  # already ours: refresh
-            return
-        if existing is None:
-            self._take_over()  # unreadable/corrupt -> take it, then verify
-            return
-        try:
-            heartbeat = float(existing.get("heartbeat", 0))
-        except (TypeError, ValueError):
-            heartbeat = 0.0  # corrupt heartbeat -> treat as expired (takeable), never crash
-        if self.now() - heartbeat > self.ttl_s:
-            self._take_over()  # stale: heartbeat expired -> take over, then verify
-            return
-        raise HostInUseError(
-            f"session lock held by {existing.get('session_id')!r}"
-        )
+        self._operate("acquire")
 
     def heartbeat(self) -> None:
-        existing = self._read_owner()
-        if existing is not None and existing.get("session_id") == self.session_id:
-            self._write_owner()
+        self._operate("heartbeat")
 
     def release(self) -> None:
-        existing = self._read_owner()
-        if existing is not None and existing.get("session_id") == self.session_id:
-            self.transport.run(_sh(f"rm -f {_LOCK_FILE}"))
+        self._operate("release")
 
 
 class HeartbeatThread(threading.Thread):

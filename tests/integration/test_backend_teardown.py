@@ -109,3 +109,21 @@ def test_purge_failure_still_releases_sessions():
         backend.teardown(purge=True)
 
     assert rec.calls == ["stop", "release"]
+
+
+def test_teardown_shuts_down_runtime_when_lock_release_fails(monkeypatch):
+    class FailedOutcome:
+        def release_all(self):
+            raise RuntimeError("release failed")
+
+    shutdowns = []
+    backend = SshRayBackend(transport_factory=_home_transport)
+    backend._outcome = FailedOutcome()
+    backend._owns_runtime = True
+    monkeypatch.setattr(ray, "shutdown", lambda: shutdowns.append("shutdown"))
+
+    with pytest.raises(RuntimeError, match="release failed"):
+        backend.teardown()
+
+    assert shutdowns == ["shutdown"]
+    assert backend._owns_runtime is False

@@ -373,20 +373,39 @@ class SshRayBackend(ExecutionBackend):
                 # exits. Bounded per-host reconcile timeouts if this proves noisy.
                 _log.warning("lease-sweeper did not stop within timeout; proceeding with teardown")
             self._sweeper = None
-        if self._actor is not None:
-            ray.kill(self._actor)
-            self._actor = None
-        if purge:
-            purge_errors = self._purge_remote_state()
-        if self._outcome is not None:
-            self._outcome.release_all()
-            self._outcome = None
-        if self._owns_runtime:
-            ray.shutdown()
-            self._owns_runtime = False
-        self._runtimes = {}
-        self._inv_hosts = {}
-        self._refs = {}
-        self._submitted = set()
+        cleanup_error: BaseException | None = None
+        try:
+            if self._actor is not None:
+                try:
+                    ray.kill(self._actor)
+                except BaseException as exc:
+                    cleanup_error = exc
+                finally:
+                    self._actor = None
+            if purge:
+                purge_errors = self._purge_remote_state()
+            if self._outcome is not None:
+                try:
+                    self._outcome.release_all()
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
+                finally:
+                    self._outcome = None
+        finally:
+            if self._owns_runtime:
+                try:
+                    ray.shutdown()
+                except BaseException as exc:
+                    if cleanup_error is None:
+                        cleanup_error = exc
+                finally:
+                    self._owns_runtime = False
+            self._runtimes = {}
+            self._inv_hosts = {}
+            self._refs = {}
+            self._submitted = set()
+        if cleanup_error is not None:
+            raise cleanup_error
         if purge_errors:
             raise DispatcherError("remote purge failed: " + "; ".join(purge_errors))

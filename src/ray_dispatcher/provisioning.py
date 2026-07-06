@@ -18,7 +18,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .digests import environment_digest, runner_digest, source_digest
-from .errors import ConfigurationError, HostInUseError, NoHealthyHostsError, ProvisioningError
+from .errors import (
+    ConfigurationError,
+    DispatcherError,
+    HostInUseError,
+    NoHealthyHostsError,
+    ProvisioningError,
+)
 from .locking import HeartbeatThread, SessionLock
 from .models import HostProvisioningResult, Inventory, Project, ProvisioningReport, RemoteHost
 from .ssh import CommandResult, SshConfig, SshTransport, Transport, write_remote_file
@@ -359,10 +365,20 @@ class HostProvisioner:
             self._install_runner()
             self._copy_secrets()
         except Exception as exc:  # noqa: BLE001 — any step failure marks the host unhealthy
-            hb.stop()  # stop the heartbeat BEFORE releasing (avoids a beat/rm race)
-            lock.release()
+            cleanup_errors = []
+            try:
+                hb.stop()  # stop the heartbeat BEFORE releasing (avoids a beat/rm race)
+            except Exception as cleanup_exc:  # noqa: BLE001 — preserve the primary failure
+                cleanup_errors.append(f"heartbeat stop failed: {cleanup_exc}")
+            try:
+                lock.release()
+            except Exception as cleanup_exc:  # noqa: BLE001 — preserve the primary failure
+                cleanup_errors.append(f"session lock release failed: {cleanup_exc}")
+            error = str(exc)
+            if cleanup_errors:
+                error += f"; cleanup failed: {'; '.join(cleanup_errors)}"
             return HostProvisioningResult(
-                self.host.host, False, source_dig, env_dig, error=str(exc)
+                self.host.host, False, source_dig, env_dig, error=error
             ), None
         return HostProvisioningResult(self.host.host, True, source_dig, env_dig), (lock, hb)
 
@@ -379,10 +395,21 @@ class ProvisioningOutcome:
     sessions: dict[str, tuple[SessionLock, HeartbeatThread]] = field(default_factory=dict)
 
     def release_all(self) -> None:
-        for lock, hb in self.sessions.values():
-            hb.stop()  # stop the heartbeat before releasing (avoids a beat/rm race)
-            lock.release()
+        sessions = self.sessions
         self.sessions = {}
+        errors = []
+        for host, (_, hb) in sessions.items():
+            try:
+                hb.stop()
+            except Exception as exc:  # noqa: BLE001 — every heartbeat must be stopped
+                errors.append(f"{host} heartbeat stop failed: {exc}")
+        for host, (lock, _) in sessions.items():
+            try:
+                lock.release()
+            except Exception as exc:  # noqa: BLE001 — every lock must be attempted
+                errors.append(f"{host} release failed: {exc}")
+        if errors:
+            raise DispatcherError(f"session cleanup failed: {'; '.join(errors)}")
 
 
 def _default_transport(host: RemoteHost) -> Transport:

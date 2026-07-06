@@ -63,8 +63,8 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     def failing(argv):
         if argv[:2] == ["command", "-v"]:
             return CommandResult(1, "", "missing", 0.0)  # preflight fails
-        if argv[0] == "sh" and "cat" in argv[2]:  # SessionLock._read_owner: we own it
-            return CommandResult(0, '{"session_id": "sess-1", "heartbeat": 0}', "", 0.0)
+        if argv[:2] == ["python3", "-c"] and argv[-4] == "release":
+            return CommandResult(17, "", "release broken", 0.0)
         if "$HOME" in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         return CommandResult(0, "", "", 0.0)
@@ -74,8 +74,12 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     assert result.succeeded is False
     assert session is None
     assert "missing" in result.error or "python3" in result.error
+    assert "release broken" in result.error
     # the lock was released after the failure
-    assert any(c[0] == "run" and c[1][0] == "sh" and "rm -f" in c[1][2] for c in p.t.calls)
+    assert any(
+        c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-4] == "release"
+        for c in p.t.calls
+    )
 
 
 def test_provision_host_in_use_returns_failed_no_session(tmp_path):
@@ -83,11 +87,8 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
     runner.write_text("print('r')")
 
     def held(argv):
-        joined = " ".join(argv)
-        if "set -C" in joined:
-            return CommandResult(1, "", "", 0.0)  # lock exists
-        if argv[0] == "sh" and "cat" in argv[2]:
-            return CommandResult(0, '{"session_id": "other", "heartbeat": 9e18}', "", 0.0)
+        if argv[:2] == ["python3", "-c"] and argv[-4] == "acquire":
+            return CommandResult(3, "other\n", "", 0.0)
         return CommandResult(0, "", "", 0.0)
 
     p = HostProvisioner(
@@ -98,4 +99,4 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
     )
     result, session = p.provision()
     assert result.succeeded is False and session is None
-    assert "lock" in result.error.lower() or "use" in result.error.lower()
+    assert "other" in result.error

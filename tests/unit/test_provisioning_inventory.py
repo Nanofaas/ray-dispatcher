@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.errors import NoHealthyHostsError, ProvisioningError
-from ray_dispatcher.models import Inventory, Project, RemoteHost
+from ray_dispatcher.errors import DispatcherError, NoHealthyHostsError, ProvisioningError
+from ray_dispatcher.models import Inventory, Project, ProvisioningReport, RemoteHost
 from ray_dispatcher.provisioning import ProvisioningOutcome, provision
 from ray_dispatcher.ssh import CommandResult, FakeTransport
 
@@ -117,3 +117,33 @@ def test_provision_unreachable_host_does_not_crash_and_keeps_healthy(tmp_path):
     assert "connection refused" in by_host["down"].error
     assert set(outcome.sessions) == {"ubuntu@good:22"}
     outcome.release_all()
+
+
+def test_release_all_stops_all_then_attempts_every_release_and_aggregates_errors():
+    events = []
+
+    class Cleanup:
+        def __init__(self, host):
+            self.host = host
+
+        def stop(self):
+            events.append(f"stop {self.host}")
+
+        def release(self):
+            events.append(f"release {self.host}")
+            raise RuntimeError(f"{self.host} failed")
+
+    first = Cleanup("first")
+    second = Cleanup("second")
+    outcome = ProvisioningOutcome(
+        ProvisioningReport(()),
+        {"first": (first, first), "second": (second, second)},
+    )
+
+    with pytest.raises(DispatcherError) as exc_info:
+        outcome.release_all()
+
+    assert events == ["stop first", "stop second", "release first", "release second"]
+    assert "first failed" in str(exc_info.value)
+    assert "second failed" in str(exc_info.value)
+    assert outcome.sessions == {}
