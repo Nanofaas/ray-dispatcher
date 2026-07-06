@@ -63,6 +63,8 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     def failing(argv):
         if argv[:2] == ["command", "-v"]:
             return CommandResult(1, "", "missing", 0.0)  # preflight fails
+        if argv[:2] == ["python3", "-c"] and argv[-4] == "release":
+            return CommandResult(17, "", "release broken", 0.0)
         if "$HOME" in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         return CommandResult(0, "", "", 0.0)
@@ -72,6 +74,7 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     assert result.succeeded is False
     assert session is None
     assert "missing" in result.error or "python3" in result.error
+    assert "release broken" in result.error
     # the lock was released after the failure
     assert any(
         c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-4] == "release"

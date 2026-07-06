@@ -1,3 +1,4 @@
+import pytest
 import ray
 
 from ray_dispatcher.backends import ssh_ray
@@ -65,3 +66,21 @@ def test_teardown_shuts_down_owned_runtime_and_releases_locks(monkeypatch):
 def test_teardown_is_safe_without_setup():
     backend = SshRayBackend(transport_factory=_home_transport)
     backend.teardown()  # no runtime owned -> no error, no ray.shutdown of a foreign runtime
+
+
+def test_teardown_shuts_down_runtime_when_lock_release_fails(monkeypatch):
+    class FailedOutcome:
+        def release_all(self):
+            raise RuntimeError("release failed")
+
+    shutdowns = []
+    backend = SshRayBackend(transport_factory=_home_transport)
+    backend._outcome = FailedOutcome()
+    backend._owns_runtime = True
+    monkeypatch.setattr(ray, "shutdown", lambda: shutdowns.append("shutdown"))
+
+    with pytest.raises(RuntimeError, match="release failed"):
+        backend.teardown()
+
+    assert shutdowns == ["shutdown"]
+    assert backend._owns_runtime is False

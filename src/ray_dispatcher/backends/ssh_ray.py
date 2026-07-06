@@ -325,11 +325,15 @@ class SshRayBackend(ExecutionBackend):
                 # exits. Bounded per-host reconcile timeouts if this proves noisy.
                 _log.warning("lease-sweeper did not stop within timeout; proceeding with teardown")
             self._sweeper = None
-        if self._actor is not None:
-            ray.kill(self._actor)
-            self._actor = None
-        if self._outcome is not None:
-            self._outcome.release_all()
-        if self._owns_runtime:
-            ray.shutdown()
-            self._owns_runtime = False
+        try:
+            if self._actor is not None:
+                ray.kill(self._actor)
+                self._actor = None
+            if self._outcome is not None:
+                self._outcome.release_all()
+        finally:
+            if self._owns_runtime:
+                try:
+                    ray.shutdown()
+                finally:
+                    self._owns_runtime = False
