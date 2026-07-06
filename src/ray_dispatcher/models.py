@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import PurePosixPath
 
 import yaml
 
@@ -19,7 +21,11 @@ _JOB_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _is_posix_env_name(name: str) -> bool:
-    return bool(_POSIX_ENV_NAME_RE.fullmatch(name))
+    return isinstance(name, str) and bool(_POSIX_ENV_NAME_RE.fullmatch(name))
+
+
+def _is_valid_job_id(value: object) -> bool:
+    return isinstance(value, str) and bool(_JOB_ID_RE.fullmatch(value))
 
 
 @dataclass(frozen=True)
@@ -36,9 +42,13 @@ class RemoteHost:
             raise ModelValidationError("host must be a non-empty string")
         if not isinstance(self.user, str) or not self.user:
             raise ModelValidationError("user must be a non-empty string")
-        if self.slots < 1:
+        if not isinstance(self.slots, int) or isinstance(self.slots, bool) or self.slots < 1:
             raise ModelValidationError(f"slots must be >= 1, got {self.slots}")
-        if not (1 <= self.port <= 65535):
+        if (
+            not isinstance(self.port, int)
+            or isinstance(self.port, bool)
+            or not (1 <= self.port <= 65535)
+        ):
             raise ModelValidationError(f"port must be in 1..65535, got {self.port}")
 
 
@@ -98,6 +108,12 @@ class SecretFile:
             )
         if self.env_var is not None and not _is_posix_env_name(self.env_var):
             raise ModelValidationError(f"invalid secret env_var: {self.env_var!r}")
+        if (
+            not isinstance(self.mode, int)
+            or isinstance(self.mode, bool)
+            or not 0 <= self.mode <= 0o777
+        ):
+            raise ModelValidationError(f"secret mode must be an int in 0..0o777, got {self.mode!r}")
 
 
 @dataclass(frozen=True)
@@ -124,6 +140,9 @@ class Project:
         names = [s.remote_name for s in self.secrets]
         if len(names) != len(set(names)):
             raise ModelValidationError("duplicate secret remote_name in project")
+        env_vars = [s.env_var for s in self.secrets if s.env_var is not None]
+        if len(env_vars) != len(set(env_vars)):
+            raise ModelValidationError("duplicate secret env_var in project")
 
 
 @dataclass(frozen=True)
@@ -168,7 +187,7 @@ class Job:
     cwd: str = "."
 
     def __post_init__(self) -> None:
-        if not _JOB_ID_RE.fullmatch(self.id):
+        if not _is_valid_job_id(self.id):
             raise ModelValidationError(f"invalid job id: {self.id!r}")
         if not self.command:
             raise ModelValidationError("command must be non-empty")
@@ -179,11 +198,23 @@ class Job:
                 )
             if "\x00" in part:
                 raise ModelValidationError("command parts must not contain NUL bytes")
-        for key in self.env:
+        for key, value in self.env.items():
             if not _is_posix_env_name(key):
                 raise ModelValidationError(f"invalid env key: {key!r}")
-        if self.timeout_s is not None and self.timeout_s <= 0:
-            raise ModelValidationError("timeout_s must be > 0 when set")
+            if not isinstance(value, str):
+                raise ModelValidationError(f"env values must be strings, got {value!r}")
+        if self.timeout_s is not None and (
+            not isinstance(self.timeout_s, (int, float))
+            or isinstance(self.timeout_s, bool)
+            or not math.isfinite(self.timeout_s)
+            or self.timeout_s <= 0
+        ):
+            raise ModelValidationError("timeout_s must be finite and > 0 when set")
+        destinations = [PurePosixPath(o.destination or o.source).parts for o in self.outputs]
+        for i, left in enumerate(destinations):
+            for right in destinations[i + 1:]:
+                if left == right or left == right[:len(left)] or right == left[:len(right)]:
+                    raise ModelValidationError("output destinations must not overlap")
         object.__setattr__(self, "cwd", normalize_relative(self.cwd, field="cwd"))
 
 
@@ -214,7 +245,11 @@ class RetryPolicy:
     )
 
     def __post_init__(self) -> None:
-        if self.max_attempts < 1:
+        if (
+            not isinstance(self.max_attempts, int)
+            or isinstance(self.max_attempts, bool)
+            or self.max_attempts < 1
+        ):
             raise ModelValidationError("max_attempts must be >= 1")
 
 

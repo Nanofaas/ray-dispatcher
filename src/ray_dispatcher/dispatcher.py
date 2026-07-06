@@ -26,6 +26,7 @@ from .models import (
     Project,
     ProvisioningReport,
     RetryPolicy,
+    _is_valid_job_id,
 )
 
 _log = logging.getLogger(__name__)
@@ -91,6 +92,8 @@ class Dispatcher:
         dupes = {i for i in ids if ids.count(i) > 1}
         if dupes:
             raise ModelValidationError(f"duplicate job id(s) in batch: {sorted(dupes)}")
+        if batch_id is not None and not _is_valid_job_id(batch_id):
+            raise ModelValidationError(f"invalid batch_id: {batch_id!r}")
         if not self._setup_done:
             self.setup()
         if batch_id is None:
@@ -100,8 +103,19 @@ class Dispatcher:
             batch_path.mkdir(parents=True)  # atomic claim: exists -> another batch owns it
         except FileExistsError:
             raise BatchExistsError(f"batch directory already exists: {batch_path}") from None
-        handles = [self._backend.submit(batch_id, job) for job in jobs]
-        self._outstanding.extend(handles)
+        handles: list[JobHandle] = []
+        try:
+            for job in jobs:
+                handle = self._backend.submit(batch_id, job)
+                handles.append(handle)
+                self._outstanding.append(handle)
+        except BaseException:
+            for handle in handles:
+                try:
+                    self._backend.cancel(handle)
+                except BaseException:  # noqa: BLE001
+                    pass
+            raise
         return handles
 
     def status(self, handle: JobHandle) -> JobStatus:
