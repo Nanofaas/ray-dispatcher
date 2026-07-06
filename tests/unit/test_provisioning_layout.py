@@ -52,6 +52,18 @@ def test_checked_raises_step_error_on_nonzero():
         p._checked(["false"], "do thing")
 
 
+def test_checked_uses_transport_default_timeout():
+    class RecordingTransport(FakeTransport):
+        def run(self, argv, **kwargs):
+            self.run_kwargs = kwargs
+            return super().run(argv)
+
+    t = RecordingTransport()
+    p = HostProvisioner(t, _project(), _host(), runner_path="x", session_id="s")
+    p._checked(["true"], "do thing")
+    assert t.run_kwargs == {}
+
+
 def test_write_remote_file_is_atomic_tmp_then_mv():
     t = FakeTransport()  # default rc 0
     p = HostProvisioner(t, _project(), _host(), runner_path="x", session_id="s")
