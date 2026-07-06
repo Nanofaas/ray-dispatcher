@@ -315,9 +315,11 @@ def _kill_remote_pgid(
         time.sleep(poll_s)
 
 
-def _run_checked(transport: Transport, argv: list[str], what: str) -> CommandResult:
+def _run_checked(
+    transport: Transport, argv: list[str], what: str, *, unbounded: bool = False
+) -> CommandResult:
     """Run a library-controlled remote command; raise on nonzero (no user strings)."""
-    result = transport.run(argv)
+    result = transport.run(argv, timeout_s=None) if unbounded else transport.run(argv)
     if result.returncode != 0:
         raise DispatcherError(f"{what} failed: {result.stderr.strip()}")
     return result
@@ -389,7 +391,12 @@ def execute_attempt(
             def _invoke() -> None:
                 try:
                     _result.append(
-                        _run_checked(transport, ["python3", runner, run.manifest], "invoke runner")
+                        _run_checked(
+                            transport,
+                            ["python3", runner, run.manifest],
+                            "invoke runner",
+                            unbounded=True,
+                        )
                     )
                 except BaseException as e:
                     _exc.append(e)
@@ -430,7 +437,12 @@ def execute_attempt(
             if _exc:
                 raise _exc[0]  # re-raise SSH/dispatcher exception from the thread
         else:
-            _run_checked(transport, ["python3", runner, run.manifest], "invoke runner")
+            _run_checked(
+                transport,
+                ["python3", runner, run.manifest],
+                "invoke runner",
+                unbounded=True,
+            )
     except _HostCleanupError:
         raise
     except BaseException as exc:

@@ -140,10 +140,8 @@ class HostProvisioner:
 
     # --- helpers -------------------------------------------------------------
 
-    def _checked(
-        self, argv: list[str], what: str, *, timeout_s: float | None = None
-    ) -> CommandResult:
-        r = self.t.run(argv, timeout_s=timeout_s)
+    def _checked(self, argv: list[str], what: str) -> CommandResult:
+        r = self.t.run(argv)
         if r.returncode != 0:
             detail = (r.stderr or r.stdout).strip()
             raise _StepError(f"{what} failed on {self.host.host} (rc={r.returncode}): {detail}")

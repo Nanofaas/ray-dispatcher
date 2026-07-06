@@ -78,6 +78,31 @@ def test_execute_attempt_no_timeout_when_timeout_s_is_none(tmp_path):
     assert result.status == JobStatus.SUCCEEDED
 
 
+def test_execute_attempt_runner_explicitly_opts_out_of_control_timeout(tmp_path):
+    class RecordingTransport(FakeTransport):
+        def __init__(self):
+            super().__init__(run_results=self._results)
+            self.runner_timeout = "omitted"
+
+        @staticmethod
+        def _results(argv: list[str]) -> CommandResult:
+            if argv[0] == "cat":
+                return CommandResult(0, '{"returncode": 0, "duration_s": 0.0}', "", 0.0)
+            return CommandResult(0, "", "", 0.0)
+
+        def run(self, argv, *, timeout_s="omitted"):
+            if argv[0] == "python3":
+                self.runner_timeout = timeout_s
+            return super().run(argv, timeout_s=timeout_s)
+
+    transport = RecordingTransport()
+    layout = JobLayout(str(tmp_path), "b1", "j2")
+    job = Job(id="j2", command=("echo", "hi"))
+
+    execute_attempt(transport, _runtime(), job, batch_id="b1", attempt=1, local=layout)
+    assert transport.runner_timeout is None
+
+
 def test_timeout_attempt_writes_attempt_json_and_pulls_logs(tmp_path):
     """The TIMED_OUT attempt leaves attempt.json and best-effort logs on disk (§9.1)."""
     runner_started = threading.Event()
