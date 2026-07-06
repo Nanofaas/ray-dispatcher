@@ -365,6 +365,7 @@ class HostProvisioner:
             env_dig = self._publish_env(uv)
             self._install_runner()
             self._copy_secrets()
+            hb.raise_if_failed()
         except Exception as exc:  # noqa: BLE001 — any step failure marks the host unhealthy
             cleanup_errors = []
             try:
@@ -394,6 +395,10 @@ class ProvisioningOutcome:
 
     report: ProvisioningReport
     sessions: dict[str, tuple[SessionLock, HeartbeatThread]] = field(default_factory=dict)
+
+    def raise_if_session_lost(self) -> None:
+        for _, heartbeat in self.sessions.values():
+            heartbeat.raise_if_failed()
 
     def release_all(self) -> None:
         sessions = self.sessions

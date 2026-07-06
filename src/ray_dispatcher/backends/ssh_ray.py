@@ -18,7 +18,12 @@ from typing import cast
 import ray
 
 from ..digests import runner_digest
-from ..errors import DispatcherError, ModelValidationError, RayRuntimeConflictError
+from ..errors import (
+    DispatcherError,
+    ModelValidationError,
+    RayRuntimeConflictError,
+    SessionLockLostError,
+)
 from ..models import (
     HostProvisioningResult,
     Inventory,
@@ -191,6 +196,18 @@ class SshRayBackend(ExecutionBackend):
         self._refs: dict[str, object] = {}
         self._submitted: set[tuple[str, str]] = set()
 
+    def _fail_if_session_lost(self) -> None:
+        if self._outcome is None:
+            return
+        try:
+            self._outcome.raise_if_session_lost()
+        except SessionLockLostError:
+            try:
+                self.teardown()
+            except BaseException:
+                _log.exception("failed to tear down after session lock loss")
+            raise
+
     def setup(
         self, inventory: Inventory, project: Project, *, force: bool = False
     ) -> ProvisioningReport:
@@ -209,6 +226,7 @@ class SshRayBackend(ExecutionBackend):
         )
         self._outcome = outcome
         try:
+            outcome.raise_if_session_lost()
             runner_dig = runner_digest(self._runner_path)
             healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
             inv_hosts = {h.host: h for h in inventory.hosts}
@@ -307,6 +325,7 @@ class SshRayBackend(ExecutionBackend):
         )
 
     def submit(self, batch_id: str, job: Job) -> JobHandle:
+        self._fail_if_session_lost()
         token = uuid.uuid4().hex
         local = JobLayout(self._results_dir, batch_id, job.id)
         ref = _attempt_task.remote(
@@ -319,6 +338,7 @@ class SshRayBackend(ExecutionBackend):
         return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
 
     def status(self, handle: JobHandle) -> JobStatus:
+        self._fail_if_session_lost()
         ref = self._refs.get(handle.token)
         if ref is None:
             raise DispatcherError(
@@ -340,6 +360,7 @@ class SshRayBackend(ExecutionBackend):
             ray.cancel(ref)
 
     def resolve(self, handle: JobHandle) -> JobResult:
+        self._fail_if_session_lost()
         ref = self._refs[handle.token]
         try:
             return ray.get(ref)  # type: ignore[call-overload, no-any-return]
@@ -351,6 +372,7 @@ class SshRayBackend(ExecutionBackend):
             )
 
     def running_hosts(self) -> dict[str, str]:
+        self._fail_if_session_lost()
         if self._actor is None:
             return {}
         return cast(dict[str, str], ray.get(self._actor.current_hosts.remote()))

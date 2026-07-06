@@ -7,10 +7,11 @@ import threading
 import time
 from collections.abc import Callable
 
-from .errors import HostInUseError
+from .errors import HostInUseError, SessionLockLostError
 from .ssh import Transport, TransportError
 
 _CONFLICT = 3
+_LOST = 4
 _LOCK_SCRIPT = r"""
 import fcntl
 import json
@@ -44,7 +45,10 @@ with open(guard_path, "a", encoding="utf-8") as guard:
             print(owner.get("session_id", ""))
             raise SystemExit(3)
 
-    if action in {"acquire", "heartbeat"} and (action == "acquire" or owned):
+    if action == "heartbeat" and not owned:
+        raise SystemExit(4)
+
+    if action in {"acquire", "heartbeat"}:
         fd, temporary = tempfile.mkstemp(prefix=".session.", dir=lock_dir)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as temporary_file:
@@ -98,6 +102,10 @@ class SessionLock:
             raise HostInUseError(
                 f"session lock held by {result.stdout.strip()!r}"
             )
+        if action == "heartbeat" and result.returncode == _LOST:
+            raise SessionLockLostError(
+                f"session {self.session_id!r} no longer owns the remote lock"
+            )
         detail = result.stderr.strip() or result.stdout.strip()
         raise TransportError(
             f"session-lock {action} failed ({result.returncode}): {detail}",
@@ -122,13 +130,24 @@ class HeartbeatThread(threading.Thread):
         self._lock = lock
         self._interval = interval_s
         self._stopped = threading.Event()
+        self._failed = threading.Event()
+        self._failure: SessionLockLostError | None = None
 
     def run(self) -> None:
         while not self._stopped.wait(self._interval):
             try:
                 self._lock.heartbeat()
+            except SessionLockLostError as exc:
+                self._failure = exc
+                self._failed.set()
+                return
             except Exception:  # noqa: BLE001 — heartbeat is best-effort; TTL is the net
                 pass
+
+    def raise_if_failed(self) -> None:
+        if self._failed.is_set():
+            assert self._failure is not None
+            raise self._failure
 
     def stop(self) -> None:
         self._stopped.set()

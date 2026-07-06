@@ -15,7 +15,7 @@ def test_public_errors_importable():
     for name in [
         "DispatcherError", "ConfigurationError", "ModelValidationError",
         "PathValidationError", "RayRuntimeConflictError", "ProvisioningError",
-        "HostInUseError", "NoHealthyHostsError", "BatchExistsError",
+        "HostInUseError", "SessionLockLostError", "NoHealthyHostsError", "BatchExistsError",
         "BatchFailedError",
     ]:
         assert hasattr(rd, name), name

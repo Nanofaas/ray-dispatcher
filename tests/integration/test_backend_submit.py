@@ -1,11 +1,15 @@
 import time
 
+import pytest
+
 from ray_dispatcher.backends import ssh_ray
 from ray_dispatcher.backends.ssh_ray import SshRayBackend
+from ray_dispatcher.errors import SessionLockLostError
 from ray_dispatcher.models import (
     HostProvisioningResult,
     Inventory,
     Job,
+    JobHandle,
     JobStatus,
     Project,
     ProvisioningReport,
@@ -24,6 +28,36 @@ def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
         HostProvisioningResult(h, True, "src123", "env123") for h in host_names
     ))
     return ProvisioningOutcome(report, sessions={})
+
+
+@pytest.mark.parametrize("operation", ["submit", "status"])
+def test_backend_refuses_work_and_tears_down_after_session_loss(operation):
+    calls: list[str] = []
+
+    class Lock:
+        def release(self):
+            calls.append("release")
+
+    class Heartbeat:
+        def raise_if_failed(self):
+            raise SessionLockLostError("lost")
+
+        def stop(self):
+            calls.append("stop")
+
+    backend = SshRayBackend()
+    backend._outcome = ProvisioningOutcome(
+        ProvisioningReport(()), {"host": (Lock(), Heartbeat())}  # type: ignore[arg-type]
+    )
+
+    with pytest.raises(SessionLockLostError, match="lost"):
+        if operation == "submit":
+            backend.submit("batch", Job(id="job", command=("true",)))
+        else:
+            backend.status(JobHandle(batch_id="batch", job_id="job", token="missing"))
+
+    assert calls == ["stop", "release"]
+    assert backend._outcome is None
 
 
 def test_submit_and_resolve_succeeds(tmp_path, monkeypatch):
