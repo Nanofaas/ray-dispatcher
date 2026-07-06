@@ -61,6 +61,16 @@ def test_run_uses_configured_control_timeout_by_default(monkeypatch):
     SshTransport(_cfg(), control_timeout_s=17).run(["true"])
 
 
+def test_run_default_control_timeout_allows_cold_provisioning(monkeypatch):
+    class Connection:
+        def run(self, command, **kwargs):
+            assert kwargs["timeout"] == 300
+            return type("Result", (), {"exited": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: Connection())
+    SshTransport(_cfg()).run(["true"])
+
+
 def test_run_allows_explicit_unbounded_timeout(monkeypatch):
     class Connection:
         def run(self, command, **kwargs):
@@ -69,6 +79,13 @@ def test_run_allows_explicit_unbounded_timeout(monkeypatch):
 
     monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: Connection())
     SshTransport(_cfg()).run(["true"], timeout_s=None)
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), True])
+def test_run_rejects_invalid_explicit_timeout(monkeypatch, value):
+    monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: object())
+    with pytest.raises(ModelValidationError, match="timeout_s"):
+        SshTransport(_cfg()).run(["true"], timeout_s=value)
 
 
 def test_rsync_uses_configured_timeout(monkeypatch):

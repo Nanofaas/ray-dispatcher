@@ -1,5 +1,7 @@
 import paramiko
+import pytest
 
+from ray_dispatcher.errors import ModelValidationError
 from ray_dispatcher.ssh import SshConfig, build_connection
 
 
@@ -34,3 +36,13 @@ def test_build_connection_sets_connect_timeout(tmp_path):
                     known_hosts_file=str(kh))
     conn = build_connection(cfg, connect_timeout_s=13)
     assert conn.connect_timeout == 13
+
+
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), True])
+def test_build_connection_rejects_invalid_connect_timeout(tmp_path, value):
+    kh = tmp_path / "known_hosts"
+    kh.write_text("")
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None,
+                    known_hosts_file=str(kh))
+    with pytest.raises(ModelValidationError, match="connect_timeout_s"):
+        build_connection(cfg, connect_timeout_s=value)

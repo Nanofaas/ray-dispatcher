@@ -18,7 +18,7 @@ from .errors import DispatcherError, ModelValidationError
 from .models import RemoteHost
 
 DEFAULT_CONNECT_TIMEOUT_S = 10.0
-DEFAULT_CONTROL_TIMEOUT_S = 60.0
+DEFAULT_CONTROL_TIMEOUT_S = 300.0
 DEFAULT_RSYNC_TIMEOUT_S = 300.0
 
 
@@ -27,6 +27,17 @@ class _DefaultTimeout:
 
 
 _DEFAULT_TIMEOUT = _DefaultTimeout()
+
+
+def _validate_timeout(value: object, name: str) -> float:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+    ):
+        raise ModelValidationError(f"{name} must be finite and > 0")
+    return float(value)
 
 
 def _resolve_existing(path: str, label: str) -> str:
@@ -178,22 +189,10 @@ class SshTransport:
         control_timeout_s: float = DEFAULT_CONTROL_TIMEOUT_S,
         rsync_timeout_s: float = DEFAULT_RSYNC_TIMEOUT_S,
     ) -> None:
-        for name, value in (
-            ("connect_timeout_s", connect_timeout_s),
-            ("control_timeout_s", control_timeout_s),
-            ("rsync_timeout_s", rsync_timeout_s),
-        ):
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-                or value <= 0
-            ):
-                raise ModelValidationError(f"{name} must be finite and > 0")
         self.cfg = cfg
-        self.connect_timeout_s = connect_timeout_s
-        self.control_timeout_s = control_timeout_s
-        self.rsync_timeout_s = rsync_timeout_s
+        self.connect_timeout_s = _validate_timeout(connect_timeout_s, "connect_timeout_s")
+        self.control_timeout_s = _validate_timeout(control_timeout_s, "control_timeout_s")
+        self.rsync_timeout_s = _validate_timeout(rsync_timeout_s, "rsync_timeout_s")
         self._conn: Any = None  # lazily-built fabric.Connection (Task 5)
 
     def push(
@@ -222,12 +221,15 @@ class SshTransport:
         *,
         timeout_s: float | None | _DefaultTimeout = _DEFAULT_TIMEOUT,
     ) -> CommandResult:
+        if isinstance(timeout_s, _DefaultTimeout):
+            effective_timeout = self.control_timeout_s
+        elif timeout_s is None:
+            effective_timeout = None
+        else:
+            effective_timeout = _validate_timeout(timeout_s, "timeout_s")
         if self._conn is None:
             self._conn = build_connection(self.cfg, connect_timeout_s=self.connect_timeout_s)
         command = shlex.join(argv)  # argv is library-controlled; never a user job string
-        effective_timeout = (
-            self.control_timeout_s if isinstance(timeout_s, _DefaultTimeout) else timeout_s
-        )
         start = time.monotonic()
         try:
             result = self._conn.run(
@@ -307,6 +309,7 @@ def build_connection(
     cfg: SshConfig, *, connect_timeout_s: float = DEFAULT_CONNECT_TIMEOUT_S
 ) -> fabric.Connection:
     """A Fabric connection that enforces host-key checking against cfg.known_hosts_file."""
+    connect_timeout_s = _validate_timeout(connect_timeout_s, "connect_timeout_s")
     connect_kwargs: dict[str, object] = {}
     if cfg.identity_file:
         connect_kwargs["key_filename"] = cfg.identity_file
