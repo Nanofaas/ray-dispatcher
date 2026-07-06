@@ -360,7 +360,7 @@ class SshRayBackend(ExecutionBackend):
         for host_name, runtime in self._runtimes.items():
             paths = [runtime.layout.project, runtime.layout.secrets]
             paths.extend(
-                f"{runtime.layout.root}/runs/{batch_id}/{job_id}"
+                f"{runtime.layout.runs}/{batch_id}/{job_id}"
                 for batch_id, job_id in sorted(self._submitted)
             )
             try:
