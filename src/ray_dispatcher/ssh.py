@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import shlex
 import subprocess
@@ -15,6 +16,17 @@ import paramiko
 
 from .errors import DispatcherError, ModelValidationError
 from .models import RemoteHost
+
+DEFAULT_CONNECT_TIMEOUT_S = 10.0
+DEFAULT_CONTROL_TIMEOUT_S = 60.0
+DEFAULT_RSYNC_TIMEOUT_S = 300.0
+
+
+class _DefaultTimeout:
+    pass
+
+
+_DEFAULT_TIMEOUT = _DefaultTimeout()
 
 
 def _resolve_existing(path: str, label: str) -> str:
@@ -158,8 +170,30 @@ class SshTransport:
     """Fabric for run (Task 5), OpenSSH rsync for push/pull. The Fabric
     connection is created lazily so file transfer needs no live connection."""
 
-    def __init__(self, cfg: SshConfig) -> None:
+    def __init__(
+        self,
+        cfg: SshConfig,
+        *,
+        connect_timeout_s: float = DEFAULT_CONNECT_TIMEOUT_S,
+        control_timeout_s: float = DEFAULT_CONTROL_TIMEOUT_S,
+        rsync_timeout_s: float = DEFAULT_RSYNC_TIMEOUT_S,
+    ) -> None:
+        for name, value in (
+            ("connect_timeout_s", connect_timeout_s),
+            ("control_timeout_s", control_timeout_s),
+            ("rsync_timeout_s", rsync_timeout_s),
+        ):
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ModelValidationError(f"{name} must be finite and > 0")
         self.cfg = cfg
+        self.connect_timeout_s = connect_timeout_s
+        self.control_timeout_s = control_timeout_s
+        self.rsync_timeout_s = rsync_timeout_s
         self._conn: Any = None  # lazily-built fabric.Connection (Task 5)
 
     def push(
@@ -182,17 +216,25 @@ class SshTransport:
         src = f"{self.cfg.user}@{self.cfg.host}:{remote}"
         self._rsync(build_rsync_argv(self.cfg, src, local, delete=delete, excludes=excludes))
 
-    def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult:
+    def run(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_s: float | None | _DefaultTimeout = _DEFAULT_TIMEOUT,
+    ) -> CommandResult:
         if self._conn is None:
-            self._conn = build_connection(self.cfg)
+            self._conn = build_connection(self.cfg, connect_timeout_s=self.connect_timeout_s)
         command = shlex.join(argv)  # argv is library-controlled; never a user job string
+        effective_timeout = (
+            self.control_timeout_s if isinstance(timeout_s, _DefaultTimeout) else timeout_s
+        )
         start = time.monotonic()
         try:
             result = self._conn.run(
-                command, hide=True, warn=True, timeout=timeout_s, in_stream=False
+                command, hide=True, warn=True, timeout=effective_timeout, in_stream=False
             )
         except Exception as exc:  # noqa: BLE001 — uniform seam failure
-            raise TransportError(f"ssh run failed: {exc}") from exc
+            raise TransportError(f"ssh run failed for {command!r}: {exc}") from exc
         return CommandResult(
             returncode=result.exited,
             stdout=result.stdout,
@@ -202,11 +244,21 @@ class SshTransport:
 
     def _rsync(self, argv: list[str]) -> None:
         try:
-            subprocess.run(argv, check=True, capture_output=True, text=True)
+            subprocess.run(
+                argv,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=self.rsync_timeout_s,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise TransportError(f"rsync timed out after {exc.timeout}s") from exc
         except subprocess.CalledProcessError as exc:
             raise TransportError(
                 f"rsync failed ({exc.returncode}): {exc.stderr}", returncode=exc.returncode
             ) from exc
+        except OSError as exc:
+            raise TransportError(f"rsync launch failed: {exc}") from exc
 
 
 def terminate_process_group(
@@ -251,13 +303,19 @@ def write_remote_file(
         raise TransportError(f"failed to write {path}: {result.stderr}")
 
 
-def build_connection(cfg: SshConfig) -> fabric.Connection:
+def build_connection(
+    cfg: SshConfig, *, connect_timeout_s: float = DEFAULT_CONNECT_TIMEOUT_S
+) -> fabric.Connection:
     """A Fabric connection that enforces host-key checking against cfg.known_hosts_file."""
     connect_kwargs: dict[str, object] = {}
     if cfg.identity_file:
         connect_kwargs["key_filename"] = cfg.identity_file
     conn = fabric.Connection(
-        host=cfg.host, user=cfg.user, port=cfg.port, connect_kwargs=connect_kwargs
+        host=cfg.host,
+        user=cfg.user,
+        port=cfg.port,
+        connect_timeout=connect_timeout_s,
+        connect_kwargs=connect_kwargs,
     )
     client = conn.client  # lazily-created paramiko.SSHClient
     client.load_host_keys(cfg.known_hosts_file)

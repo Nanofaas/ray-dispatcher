@@ -3,6 +3,7 @@ import subprocess
 import pytest
 
 from ray_dispatcher import ssh
+from ray_dispatcher.errors import ModelValidationError
 from ray_dispatcher.ssh import SshConfig, SshTransport, TransportError
 
 
@@ -40,4 +41,60 @@ def test_rsync_failure_raises_transport_error(monkeypatch):
 
     monkeypatch.setattr(ssh.subprocess, "run", boom)
     with pytest.raises(TransportError):
+        SshTransport(_cfg()).push("/a", "/b")
+
+
+@pytest.mark.parametrize("name", ["connect_timeout_s", "control_timeout_s", "rsync_timeout_s"])
+@pytest.mark.parametrize("value", [0, -1, float("inf"), float("nan"), None, "10", True])
+def test_constructor_rejects_invalid_timeouts(name, value):
+    with pytest.raises(ModelValidationError, match=name):
+        SshTransport(_cfg(), **{name: value})
+
+
+def test_run_uses_configured_control_timeout_by_default(monkeypatch):
+    class Connection:
+        def run(self, command, **kwargs):
+            assert kwargs["timeout"] == 17
+            return type("Result", (), {"exited": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: Connection())
+    SshTransport(_cfg(), control_timeout_s=17).run(["true"])
+
+
+def test_run_allows_explicit_unbounded_timeout(monkeypatch):
+    class Connection:
+        def run(self, command, **kwargs):
+            assert kwargs["timeout"] is None
+            return type("Result", (), {"exited": 0, "stdout": "", "stderr": ""})()
+
+    monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: Connection())
+    SshTransport(_cfg()).run(["true"], timeout_s=None)
+
+
+def test_rsync_uses_configured_timeout(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        ssh.subprocess,
+        "run",
+        lambda argv, **kwargs: seen.update(kwargs) or subprocess.CompletedProcess(argv, 0),
+    )
+    SshTransport(_cfg(), rsync_timeout_s=23).push("/a", "/b")
+    assert seen["timeout"] == 23
+
+
+def test_rsync_timeout_raises_transport_error(monkeypatch):
+    def boom(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, timeout=23)
+
+    monkeypatch.setattr(ssh.subprocess, "run", boom)
+    with pytest.raises(TransportError, match="rsync timed out after 23"):
+        SshTransport(_cfg(), rsync_timeout_s=23).push("/a", "/b")
+
+
+def test_rsync_launch_error_raises_transport_error(monkeypatch):
+    def boom(argv, **kwargs):
+        raise FileNotFoundError("rsync missing")
+
+    monkeypatch.setattr(ssh.subprocess, "run", boom)
+    with pytest.raises(TransportError, match="rsync launch failed: rsync missing"):
         SshTransport(_cfg()).push("/a", "/b")
