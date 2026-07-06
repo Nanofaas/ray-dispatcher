@@ -158,3 +158,27 @@ def test_timeout_fails_closed_when_pid_never_appears(tmp_path):
         assert exc.value.result.status is JobStatus.TIMED_OUT
     finally:
         runner_done.set()
+
+
+def test_timeout_fails_closed_while_runner_transport_thread_is_alive(tmp_path):
+    runner_done = threading.Event()
+
+    def results(argv: list[str]) -> CommandResult:
+        if argv[0] == "python3":
+            runner_done.wait(timeout=2.0)
+            return CommandResult(0, "", "", 0.0)
+        if argv[0] == "cat":
+            return CommandResult(0, '{"pid": 111, "pgid": 222}', "", 0.0)
+        if argv[:2] == ["kill", "-0"]:
+            return CommandResult(1, "", "", 0.0)
+        return CommandResult(0, "", "", 0.0)
+
+    try:
+        with pytest.raises(_HostCleanupError):
+            execute_attempt(
+                FakeTransport(run_results=results), _runtime(),
+                Job(id="j4", command=("sleep", "99"), timeout_s=0.01),
+                batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j4"),
+            )
+    finally:
+        runner_done.set()

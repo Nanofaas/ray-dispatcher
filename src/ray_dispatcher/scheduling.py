@@ -216,7 +216,7 @@ def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0
     """
     result = transport.run(["cat", pid_file])
     if result.returncode != 0:
-        return True  # no recorded process -> nothing orphaned
+        return False  # runner may still be starting; absence does not prove the host clean
     pgid = _parse_pgid(result.stdout)
     if pgid is None:
         return False  # recorded but unreadable -> cannot confirm clean
@@ -408,8 +408,9 @@ def execute_attempt(
             if _t.is_alive():
                 # Timed out — best-effort terminate the remote process group (§8.1).
                 cleaned = _kill_remote_pgid(transport, run.pid)
-                # ponytail: the _invoke thread stays blocked on its SSH call until
-                # the remote process dies; acceptable leak, transports are per-attempt.
+                if cleaned:
+                    _t.join(timeout=0.5)
+                    cleaned = not _t.is_alive()
                 for remote, local_log in (
                     (run.stdout, local.stdout_log(attempt)),
                     (run.stderr, local.stderr_log(attempt)),
