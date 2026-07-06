@@ -1,87 +1,162 @@
 import json
+import os
+import subprocess
+import threading
+from collections.abc import Sequence
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import pytest
 
 from ray_dispatcher.errors import HostInUseError
 from ray_dispatcher.locking import SessionLock
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from ray_dispatcher.ssh import CommandResult
 
 
-def _responder(create_rc, owner, new_owner=None):
-    """FakeTransport callback: mkdir ok; create returns create_rc; cat returns owner json.
+class LocalTransport:
+    def __init__(self, home: Path) -> None:
+        self.home = home
 
-    Once an ``mv -f`` script is observed (a takeover/refresh write landing), ``cat``
-    switches to returning ``new_owner`` (defaults to ``owner`` unchanged), mirroring
-    a real remote where a completed write is visible to the next read.
-    """
-    owner_json = json.dumps(owner) if owner is not None else ""
-    new_owner_json = json.dumps(new_owner) if new_owner is not None else owner_json
-    state = {"written": False}
-
-    def results(argv):
-        script = argv[2]
-        if "set -C" in script:
-            return CommandResult(create_rc, "", "", 0.0)
-        if "mv -f" in script:
-            state["written"] = True
-            return CommandResult(0, "", "", 0.0)
-        if script.startswith("cat "):
-            current = new_owner_json if state["written"] else owner_json
-            rc = 0 if current else 1
-            return CommandResult(rc, current, "", 0.0)
-        return CommandResult(0, "", "", 0.0)  # mkdir
-
-    return results
+    def run(
+        self, argv: Sequence[str], *, timeout_s: float | None = None
+    ) -> CommandResult:
+        completed = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            env={**os.environ, "HOME": str(self.home)},
+            check=False,
+        )
+        return CommandResult(
+            completed.returncode,
+            completed.stdout,
+            completed.stderr,
+            0.0,
+        )
 
 
-def _scripts(t):
-    return [c[1][2] for c in t.calls if c[0] == "run"]
+class SplitRaceTransport(LocalTransport):
+    """Force two legacy read/write takeovers to each confirm their own write."""
+
+    def __init__(
+        self,
+        home: Path,
+        *,
+        first: bool,
+        initial_reads: threading.Barrier,
+        first_confirmed: threading.Event,
+    ) -> None:
+        super().__init__(home)
+        self.first = first
+        self.initial_reads = initial_reads
+        self.first_confirmed = first_confirmed
+        self.reads = 0
+
+    def run(
+        self, argv: Sequence[str], *, timeout_s: float | None = None
+    ) -> CommandResult:
+        if argv[:2] == ["sh", "-c"] and "mv -f" in argv[2] and not self.first:
+            assert self.first_confirmed.wait(timeout=5)
+        result = super().run(argv, timeout_s=timeout_s)
+        if argv[:2] == ["sh", "-c"] and argv[2].startswith("cat "):
+            self.reads += 1
+            if self.reads == 1:
+                self.initial_reads.wait()
+            elif self.first:
+                self.first_confirmed.set()
+        return result
 
 
-def test_live_lock_from_other_session_raises():
-    t = FakeTransport(_responder(create_rc=1,
-                                 owner={"session_id": "other", "heartbeat": 1000.0}))
-    lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)  # age 0 < ttl
-    with pytest.raises(HostInUseError):
+def _owner_file(home: Path) -> Path:
+    return home / ".ray_dispatcher" / "locks" / "session.json"
+
+
+def _write_owner(home: Path, session_id: str, heartbeat: object) -> None:
+    owner = _owner_file(home)
+    owner.parent.mkdir(parents=True)
+    owner.write_text(
+        json.dumps({"session_id": session_id, "heartbeat": heartbeat}),
+        encoding="utf-8",
+    )
+
+
+def test_live_lock_from_other_session_raises(tmp_path: Path):
+    _write_owner(tmp_path, "other", 1000.0)
+    lock = SessionLock(LocalTransport(tmp_path), "mine", ttl_s=60, now=lambda: 1000)
+
+    with pytest.raises(HostInUseError, match="other"):
         lock.acquire()
-    assert not any("mv -f" in s for s in _scripts(t))  # never took it over
 
 
-def test_stale_lock_is_taken_over():
-    t = FakeTransport(_responder(
-        create_rc=1,
-        owner={"session_id": "other", "heartbeat": 900.0},
-        new_owner={"session_id": "mine", "heartbeat": 1000.0},
-    ))
-    lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)  # age 100 > ttl
-    lock.acquire()  # no raise
-    assert any("mv -f" in s for s in _scripts(t))  # took it over
+@pytest.mark.parametrize("heartbeat", [900.0, "garbage"])
+def test_stale_or_corrupt_lock_is_taken_over(tmp_path: Path, heartbeat: object):
+    _write_owner(tmp_path, "other", heartbeat)
+
+    SessionLock(
+        LocalTransport(tmp_path), "mine", ttl_s=60, now=lambda: 1000
+    ).acquire()
+
+    assert json.loads(_owner_file(tmp_path).read_text())["session_id"] == "mine"
 
 
-def test_own_lock_is_refreshed():
-    t = FakeTransport(_responder(create_rc=1,
-                                 owner={"session_id": "mine", "heartbeat": 1000.0}))
-    lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)
-    lock.acquire()  # no raise
-    assert any("mv -f" in s for s in _scripts(t))
+@pytest.mark.parametrize("contents", [b"not-json", b"\xff"])
+def test_corrupt_owner_file_is_taken_over(tmp_path: Path, contents: bytes):
+    owner = _owner_file(tmp_path)
+    owner.parent.mkdir(parents=True)
+    owner.write_bytes(contents)
+
+    SessionLock(LocalTransport(tmp_path), "mine", now=lambda: 1000).acquire()
+
+    assert json.loads(owner.read_text())["session_id"] == "mine"
 
 
-def test_takeover_race_lost_raises():
-    """Stale lock, we take over, but the confirming re-read shows another winner."""
-    cats = iter([
-        {"session_id": "old", "heartbeat": 0.0},    # first read: stale owner
-        {"session_id": "rival", "heartbeat": 999.0}, # post-write read: rival won
-    ])
+def test_own_acquire_refreshes(tmp_path: Path):
+    _write_owner(tmp_path, "mine", 1.0)
 
-    def results(argv):
-        script = argv[2]
-        if "set -C" in script:
-            return CommandResult(1, "", "", 0.0)  # atomic create failed: lock exists
-        if script.startswith("cat "):
-            return CommandResult(0, json.dumps(next(cats)), "", 0.0)
-        return CommandResult(0, "", "", 0.0)  # mkdir, mv
+    SessionLock(LocalTransport(tmp_path), "mine", now=lambda: 1000).acquire()
 
-    t = FakeTransport(results)
-    lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)
-    with pytest.raises(HostInUseError, match="rival"):
-        lock.acquire()
+    assert json.loads(_owner_file(tmp_path).read_text())["heartbeat"] == 1000
+
+
+def test_lost_owner_cannot_heartbeat_or_release_new_owner(tmp_path: Path):
+    _write_owner(tmp_path, "old", 0.0)
+    transport = LocalTransport(tmp_path)
+    SessionLock(transport, "new", now=lambda: 1000).acquire()
+
+    old = SessionLock(transport, "old", now=lambda: 1001)
+    old.heartbeat()
+    old.release()
+
+    assert json.loads(_owner_file(tmp_path).read_text())["session_id"] == "new"
+
+
+def test_concurrent_stale_takeover_has_exactly_one_winner(tmp_path: Path):
+    _write_owner(tmp_path, "old", 0.0)
+    initial_reads = threading.Barrier(2)
+    first_confirmed = threading.Event()
+    locks = [
+        SessionLock(
+            SplitRaceTransport(
+                tmp_path,
+                first=index == 0,
+                initial_reads=initial_reads,
+                first_confirmed=first_confirmed,
+            ),
+            session,
+            now=lambda: 1000,
+        )
+        for index, session in enumerate(("one", "two"))
+    ]
+
+    def acquire(lock: SessionLock) -> str:
+        try:
+            lock.acquire()
+        except HostInUseError:
+            return "blocked"
+        return "acquired"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(acquire, locks))
+
+    assert sorted(outcomes) == ["acquired", "blocked"]
