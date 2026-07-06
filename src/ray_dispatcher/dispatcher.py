@@ -109,11 +109,11 @@ class Dispatcher:
                 handle = self._backend.submit(batch_id, job)
                 handles.append(handle)
                 self._outstanding.append(handle)
-        except Exception:
+        except BaseException:
             for handle in handles:
                 try:
                     self._backend.cancel(handle)
-                except Exception:  # noqa: BLE001
+                except BaseException:  # noqa: BLE001
                     pass
             raise
         return handles

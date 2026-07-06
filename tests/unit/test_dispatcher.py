@@ -180,6 +180,24 @@ def test_submit_failure_tracks_and_best_effort_cancels_partial_handles(tmp_path)
     assert b.cancel.call_count == 2
 
 
+def test_submit_interrupt_cancels_partial_handles(tmp_path):
+    b = _mock_backend()
+    first = JobHandle(batch_id="batch", job_id="j1", token="token")
+    original = KeyboardInterrupt()
+    b.submit.side_effect = [first, original]
+    b.cancel.side_effect = SystemExit()
+    d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
+
+    with pytest.raises(KeyboardInterrupt) as exc:
+        d.submit(
+            [Job(id="j1", command=("echo",)), Job(id="j2", command=("echo",))],
+            batch_id="batch",
+        )
+
+    assert exc.value is original
+    b.cancel.assert_called_once_with(first)
+
+
 def test_status_delegates_to_backend():
     b = _mock_backend()
     d = Dispatcher(_inv(), _proj(), backend=b)
