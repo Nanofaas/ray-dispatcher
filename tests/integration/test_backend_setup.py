@@ -91,6 +91,9 @@ class _SessionRecorder:
     def stop(self):
         self.calls.append("stop")
 
+    def raise_if_failed(self):
+        pass
+
     def release(self):
         self.calls.append("release")
 

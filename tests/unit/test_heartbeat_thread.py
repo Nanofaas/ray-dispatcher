@@ -1,7 +1,10 @@
 import time
 
+import pytest
+
+from ray_dispatcher.errors import SessionLockLostError
 from ray_dispatcher.locking import HeartbeatThread, SessionLock
-from ray_dispatcher.ssh import FakeTransport
+from ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def test_heartbeat_thread_beats_then_stops():
@@ -16,3 +19,15 @@ def test_heartbeat_thread_beats_then_stops():
     settled = refreshes
     time.sleep(0.03)
     assert sum(1 for c in t.calls if c[0] == "run") == settled
+
+
+def test_heartbeat_thread_records_lost_ownership():
+    t = FakeTransport(run_results=lambda _argv: CommandResult(4, "", "", 0.0))
+    hb = HeartbeatThread(SessionLock(t, "old"), interval_s=0.01)
+
+    hb.start()
+    hb.join(timeout=1)
+
+    assert not hb.is_alive()
+    with pytest.raises(SessionLockLostError, match="old"):
+        hb.raise_if_failed()

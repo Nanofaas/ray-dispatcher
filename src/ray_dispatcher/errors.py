@@ -40,6 +40,10 @@ class HostInUseError(DispatcherError):
     """A remote session lock is held by another live Dispatcher session (§3.2)."""
 
 
+class SessionLockLostError(DispatcherError):
+    """This Dispatcher session no longer owns its remote session lock."""
+
+
 class NoHealthyHostsError(DispatcherError):
     """No healthy host capacity remains for pending work (§8.2)."""
 

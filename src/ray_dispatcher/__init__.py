@@ -13,6 +13,7 @@ from .errors import (
     PathValidationError,
     ProvisioningError,
     RayRuntimeConflictError,
+    SessionLockLostError,
 )
 from .models import (
     AttemptResult,
@@ -63,6 +64,7 @@ __all__ = [
     "RayRuntimeConflictError",
     "ProvisioningError",
     "HostInUseError",
+    "SessionLockLostError",
     "NoHealthyHostsError",
     "BatchExistsError",
     "BatchFailedError",

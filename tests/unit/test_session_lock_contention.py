@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from ray_dispatcher.errors import HostInUseError
+from ray_dispatcher.errors import HostInUseError, SessionLockLostError
 from ray_dispatcher.locking import SessionLock
 from ray_dispatcher.ssh import CommandResult
 
@@ -125,7 +125,8 @@ def test_lost_owner_cannot_heartbeat_or_release_new_owner(tmp_path: Path):
     SessionLock(transport, "new", now=lambda: 1000).acquire()
 
     old = SessionLock(transport, "old", now=lambda: 1001)
-    old.heartbeat()
+    with pytest.raises(SessionLockLostError, match="old"):
+        old.heartbeat()
     old.release()
 
     assert json.loads(_owner_file(tmp_path).read_text())["session_id"] == "new"
