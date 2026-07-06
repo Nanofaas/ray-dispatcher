@@ -122,6 +122,18 @@ def test_submit_generates_batch_id_when_none(tmp_path):
     assert handles[0].batch_id  # non-empty
 
 
+@pytest.mark.parametrize(
+    "batch_id", ["", "-leading", "../escape", "/absolute", "a/b", "a" * 129, 123]
+)
+def test_submit_rejects_invalid_caller_batch_id_before_setup_or_path_creation(tmp_path, batch_id):
+    b = _mock_backend()
+    d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
+    with pytest.raises(ModelValidationError, match="batch_id"):
+        d.submit([Job(id="j1", command=("echo",))], batch_id=batch_id)
+    b.setup.assert_not_called()
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_submit_raises_batch_exists_error(tmp_path):
     b = _mock_backend()
     d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
@@ -145,6 +157,27 @@ def test_submit_rejects_duplicate_job_ids(tmp_path):
     with pytest.raises(ModelValidationError, match="duplicate job id"):
         d.submit(jobs, batch_id="b2")
     b.submit.assert_not_called()
+
+
+def test_submit_failure_tracks_and_best_effort_cancels_partial_handles(tmp_path):
+    b = _mock_backend()
+    first = JobHandle(batch_id="batch", job_id="j1", token="token")
+    original = RuntimeError("submit failed")
+    b.submit.side_effect = [first, original]
+    b.cancel.side_effect = [RuntimeError("cancel failed"), None]
+    d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
+
+    with pytest.raises(RuntimeError, match="submit failed") as exc:
+        d.submit(
+            [Job(id="j1", command=("echo",)), Job(id="j2", command=("echo",))],
+            batch_id="batch",
+        )
+
+    assert exc.value is original
+    assert (tmp_path / "batch").is_dir()
+    b.cancel.assert_called_once_with(first)
+    d.teardown()
+    assert b.cancel.call_count == 2
 
 
 def test_status_delegates_to_backend():

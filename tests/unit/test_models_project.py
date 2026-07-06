@@ -22,6 +22,12 @@ def test_secretfile_rejects(kwargs):
         SecretFile(**kwargs)
 
 
+@pytest.mark.parametrize("mode", [-1, 0o1000, 0.5, "600", True])
+def test_secretfile_rejects_invalid_mode(mode):
+    with pytest.raises(ModelValidationError):
+        SecretFile(source="s", remote_name="x", mode=mode)
+
+
 def test_project_valid_defaults():
     p = Project(path="../DFaasOptimizer", project_id="dfaas-optimizer",
                 python="3.10.18", uv_version="0.11.25")
@@ -47,6 +53,14 @@ def test_project_rejects_duplicate_secret_names():
     s1 = SecretFile(source="a", remote_name="dup")
     s2 = SecretFile(source="b", remote_name="dup")
     with pytest.raises(ModelValidationError):
+        Project(path="p", project_id="pid", python="3.10.18", uv_version="0.11.25",
+                secrets=(s1, s2))
+
+
+def test_project_rejects_duplicate_secret_env_vars():
+    s1 = SecretFile(source="a", remote_name="a", env_var="TOKEN")
+    s2 = SecretFile(source="b", remote_name="b", env_var="TOKEN")
+    with pytest.raises(ModelValidationError, match="duplicate secret env_var"):
         Project(path="p", project_id="pid", python="3.10.18", uv_version="0.11.25",
                 secrets=(s1, s2))
 

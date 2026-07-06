@@ -27,6 +27,20 @@ def test_remotehost_rejects(kwargs):
         RemoteHost(**kwargs)
 
 
+@pytest.mark.parametrize("field,value", [
+    ("slots", "1"),
+    ("slots", 1.5),
+    ("slots", True),
+    ("port", "22"),
+    ("port", 22.5),
+    ("port", True),
+])
+def test_remotehost_rejects_noninteger_slots_and_port(field, value):
+    kwargs = {"host": "h", "user": "u", field: value}
+    with pytest.raises(ModelValidationError):
+        RemoteHost(**kwargs)
+
+
 def test_inventory_rejects_empty():
     with pytest.raises(ModelValidationError):
         Inventory(())

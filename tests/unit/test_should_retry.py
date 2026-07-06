@@ -1,3 +1,6 @@
+import pytest
+
+from ray_dispatcher.errors import ModelValidationError
 from ray_dispatcher.models import FailureKind, RetryPolicy
 from ray_dispatcher.scheduling import should_retry
 
@@ -27,3 +30,9 @@ def test_success_never_retries():
 def test_opt_in_retry_on_command():
     p = RetryPolicy(retry_on=frozenset({FailureKind.COMMAND}))
     assert should_retry(p, FailureKind.COMMAND, completed_attempts=1) is True
+
+
+@pytest.mark.parametrize("max_attempts", ["2", 2.5, True])
+def test_retry_policy_rejects_noninteger_max_attempts(max_attempts):
+    with pytest.raises(ModelValidationError):
+        RetryPolicy(max_attempts=max_attempts)

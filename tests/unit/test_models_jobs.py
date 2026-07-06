@@ -51,9 +51,34 @@ def test_job_rejects_bad_env_key():
         Job(id="j", command=("echo",), env={"1BAD": "x"})
 
 
+@pytest.mark.parametrize("env", [{1: "x"}, {"GOOD": 1}])
+def test_job_rejects_nonstring_env_keys_and_values(env):
+    with pytest.raises(ModelValidationError):
+        Job(id="j", command=("echo",), env=env)
+
+
 def test_job_rejects_nonpositive_timeout():
     with pytest.raises(ModelValidationError):
         Job(id="j", command=("echo",), timeout_s=0)
+
+
+@pytest.mark.parametrize("timeout", [float("inf"), float("-inf"), float("nan"), "1", True])
+def test_job_rejects_invalid_timeout(timeout):
+    with pytest.raises(ModelValidationError):
+        Job(id="j", command=("echo",), timeout_s=timeout)
+
+
+@pytest.mark.parametrize(
+    "outputs",
+    [
+        (OutputSpec("a", "result"), OutputSpec("b", "result")),
+        (OutputSpec("a", "result"), OutputSpec("b", "result/child")),
+        (OutputSpec("result"), OutputSpec("b", "result/child")),
+    ],
+)
+def test_job_rejects_colliding_output_destinations(outputs):
+    with pytest.raises(ModelValidationError, match="output destinations"):
+        Job(id="j", command=("echo",), outputs=outputs)
 
 
 def test_job_rejects_escaping_cwd():
