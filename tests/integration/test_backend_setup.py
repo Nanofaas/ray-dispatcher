@@ -132,3 +132,28 @@ def test_setup_shuts_down_runtime_and_releases_sessions_when_actor_creation_fail
     assert rec.calls == ["stop", "release"]
     assert backend._outcome is None
     assert backend._actor is None
+
+
+def test_setup_preserves_primary_error_when_session_release_also_fails(monkeypatch):
+    inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu"),))
+    outcome = _canned_outcome("10.0.0.1")
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: outcome)
+    monkeypatch.setattr(
+        outcome,
+        "release_all",
+        lambda: (_ for _ in ()).throw(RuntimeError("release")),
+    )
+    initialized = {"value": False}
+    monkeypatch.setattr(ssh_ray.ray, "is_initialized", lambda: initialized["value"])
+    monkeypatch.setattr(ssh_ray.ray, "init", lambda **k: initialized.update(value=True))
+    monkeypatch.setattr(ssh_ray.ray, "shutdown", lambda: initialized.update(value=False))
+    monkeypatch.setattr(
+        ssh_ray.HostLease, "remote", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("actor"))
+    )
+    backend = SshRayBackend(transport_factory=_home_transport)
+
+    with pytest.raises(RuntimeError, match="actor"):
+        backend.setup(inv, _project())
+
+    assert not initialized["value"]
+    assert backend._outcome is None

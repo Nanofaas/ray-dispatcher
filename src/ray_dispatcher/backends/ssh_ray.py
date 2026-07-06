@@ -237,15 +237,26 @@ class SshRayBackend(ExecutionBackend):
         except BaseException:
             self._sweep_stop.set()
             if self._actor is not None:
-                ray.kill(self._actor)
-                self._actor = None
-            outcome.release_all()
-            self._outcome = None
+                try:
+                    ray.kill(self._actor)
+                except BaseException:
+                    _log.exception("failed to kill lease actor during setup rollback")
+                finally:
+                    self._actor = None
+            try:
+                outcome.release_all()
+            except BaseException:
+                _log.exception("failed to release sessions during setup rollback")
+            finally:
+                self._outcome = None
+            try:
+                if self._owns_runtime or ray.is_initialized():
+                    ray.shutdown()
+            except BaseException:
+                _log.exception("failed to shut down Ray during setup rollback")
+            self._owns_runtime = False
             self._runtimes = {}
             self._inv_hosts = {}
-            if self._owns_runtime or ray.is_initialized():
-                ray.shutdown()
-            self._owns_runtime = False
             raise
 
     def _sweep_loop(self) -> None:
