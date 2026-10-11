@@ -65,6 +65,7 @@ def test_execute_attempt_returns_timeout_when_runner_exceeds_timeout_s(tmp_path)
 
 def test_execute_attempt_no_timeout_when_timeout_s_is_none(tmp_path):
     """When timeout_s is None, the runner is invoked without threading (§8.1 baseline)."""
+
     def results(argv: list[str]) -> CommandResult:
         if argv[0] == "cat":
             return CommandResult(0, '{"returncode": 0, "duration_s": 0.0}', "", 0.0)
@@ -125,9 +126,7 @@ def test_timeout_attempt_writes_attempt_json_and_pulls_logs(tmp_path):
     layout = JobLayout(str(tmp_path), "b1", "j1")
     job = Job(id="j1", command=("sleep", "99"), timeout_s=0.05)
 
-    result = execute_attempt(
-        transport, _runtime(), job, batch_id="b1", attempt=1, local=layout
-    )
+    result = execute_attempt(transport, _runtime(), job, batch_id="b1", attempt=1, local=layout)
     assert result.status == JobStatus.TIMED_OUT
     doc = json.loads(layout.attempt_json(1).read_text())
     assert doc["failure_kind"] == "timeout"
@@ -150,9 +149,12 @@ def test_timeout_fails_closed_when_pid_never_appears(tmp_path):
     try:
         with pytest.raises(_HostCleanupError) as exc:
             execute_attempt(
-                FakeTransport(run_results=results), _runtime(),
+                FakeTransport(run_results=results),
+                _runtime(),
                 Job(id="j3", command=("sleep", "99"), timeout_s=0.01),
-                batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j3"),
+                batch_id="b1",
+                attempt=1,
+                local=JobLayout(str(tmp_path), "b1", "j3"),
             )
         assert exc.value.result is not None
         assert exc.value.result.status is JobStatus.TIMED_OUT
@@ -176,9 +178,12 @@ def test_timeout_fails_closed_while_runner_transport_thread_is_alive(tmp_path):
     try:
         with pytest.raises(_HostCleanupError):
             execute_attempt(
-                FakeTransport(run_results=results), _runtime(),
+                FakeTransport(run_results=results),
+                _runtime(),
                 Job(id="j4", command=("sleep", "99"), timeout_s=0.01),
-                batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j4"),
+                batch_id="b1",
+                attempt=1,
+                local=JobLayout(str(tmp_path), "b1", "j4"),
             )
     finally:
         runner_done.set()

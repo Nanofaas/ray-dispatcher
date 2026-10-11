@@ -77,8 +77,9 @@ def write_result_json(path: Path, result: JobResult) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
-                                         prefix=".result-", delete=False) as fh:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=".result-", delete=False
+        ) as fh:
             temporary = Path(fh.name)
             json.dump(asdict(result), fh, default=_enc, indent=2)
         temporary.replace(path)

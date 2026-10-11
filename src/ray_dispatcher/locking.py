@@ -93,9 +93,7 @@ class SessionLock:
         if result.returncode == 0:
             return
         if action == "acquire" and result.returncode == _CONFLICT:
-            raise HostInUseError(
-                f"session lock held by {result.stdout.strip()!r}"
-            )
+            raise HostInUseError(f"session lock held by {result.stdout.strip()!r}")
         if action == "heartbeat" and result.returncode == _LOST:
             raise SessionLockLostError(
                 f"session {self.session_id!r} no longer owns the remote lock"
@@ -149,9 +147,7 @@ class HeartbeatThread(threading.Thread):
             assert self._failure is not None
             raise self._failure
 
-    def set_failure_callback(
-        self, callback: Callable[[SessionLockLostError], None]
-    ) -> None:
+    def set_failure_callback(self, callback: Callable[[SessionLockLostError], None]) -> None:
         with self._failure_lock:
             self._failure_callback = callback
             failure = self._failure

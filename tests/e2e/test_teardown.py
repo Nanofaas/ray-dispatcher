@@ -13,23 +13,36 @@ def test_context_exit_kills_process_group_before_next_session(tmp_path, inventor
     observed = None
     try:
         dispatcher.setup()
-        dispatcher.submit([Job('parent', ('python', '-c',
-            "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',"
-            "'import time; time.sleep(60)']); time.sleep(60)"))], batch_id='teardown')
+        dispatcher.submit(
+            [
+                Job(
+                    "parent",
+                    (
+                        "python",
+                        "-c",
+                        "import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',"
+                        "'import time; time.sleep(60)']); time.sleep(60)",
+                    ),
+                )
+            ],
+            batch_id="teardown",
+        )
         backend = dispatcher._backend
-        deadline = time.monotonic()+30
+        deadline = time.monotonic() + 30
         while time.monotonic() < deadline and observed is None:
             for host, runtime in backend._runtimes.items():
                 transport = backend._transport_factory(backend._inv_hosts[host])
-                result = transport.run(['cat', runtime.layout.run_paths('teardown', 'parent', 1).pid])
+                result = transport.run(
+                    ["cat", runtime.layout.run_paths("teardown", "parent", 1).pid]
+                )
                 if result.returncode == 0:
-                    observed = transport, json.loads(result.stdout)['pgid']
+                    observed = transport, json.loads(result.stdout)["pgid"]
                     break
-            time.sleep(.05)
-        assert observed is not None, 'job never started remotely'
+            time.sleep(0.05)
+        assert observed is not None, "job never started remotely"
     finally:
         dispatcher.teardown()
     transport, pgid = observed
-    assert transport.run(['kill', '-0', f'-{pgid}']).returncode != 0
-    with Dispatcher(inventory, project, results_dir=str(tmp_path/'next')) as following:
+    assert transport.run(["kill", "-0", f"-{pgid}"]).returncode != 0
+    with Dispatcher(inventory, project, results_dir=str(tmp_path / "next")) as following:
         following.setup()

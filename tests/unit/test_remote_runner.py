@@ -25,15 +25,17 @@ def _manifest(tmp_path, argv, env=None, secret_env=None):
 
 
 def _invoke(manifest_path):
-    return subprocess.run([sys.executable, RUNNER, manifest_path],
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, RUNNER, manifest_path], capture_output=True, text=True)
 
 
 def test_runner_captures_output_and_returncode(tmp_path):
     m, path = _manifest(
         tmp_path,
-        [sys.executable, "-c", "import sys; sys.stdout.write('hi'); "
-                              "sys.stderr.write('warn'); sys.exit(3)"],
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write('hi'); sys.stderr.write('warn'); sys.exit(3)",
+        ],
     )
     proc = _invoke(path)
     assert proc.returncode == 0  # runner managed the child successfully
@@ -49,10 +51,13 @@ def test_runner_captures_output_and_returncode(tmp_path):
 def test_runner_applies_venv_and_secret_env(tmp_path):
     m, path = _manifest(
         tmp_path,
-        [sys.executable, "-c",
-         "import os; open(os.environ['OUT'],'w').write("
-         "os.environ['PATH'].split(os.pathsep)[0] + '|' + "
-         "os.environ['VIRTUAL_ENV'] + '|' + os.environ['LIC'])"],
+        [
+            sys.executable,
+            "-c",
+            "import os; open(os.environ['OUT'],'w').write("
+            "os.environ['PATH'].split(os.pathsep)[0] + '|' + "
+            "os.environ['VIRTUAL_ENV'] + '|' + os.environ['LIC'])",
+        ],
         env={"OUT": str(tmp_path / "probe.txt")},
         secret_env={"LIC": "/remote/gurobi.lic"},
     )
@@ -68,8 +73,7 @@ def test_venv_path_wins_over_job_provided_path(tmp_path):
     probe = tmp_path / "probe.txt"
     m, path = _manifest(
         tmp_path,
-        [sys.executable, "-c",
-         f"import os; open({str(probe)!r},'w').write(os.environ['PATH'])"],
+        [sys.executable, "-c", f"import os; open({str(probe)!r},'w').write(os.environ['PATH'])"],
         env={"OUT": str(probe), "PATH": "/custom/bin"},
     )
     _invoke(path)

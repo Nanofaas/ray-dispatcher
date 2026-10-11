@@ -57,9 +57,7 @@ def source_digest(root: str, excludes: Sequence[str]) -> str:
     return h.hexdigest()
 
 
-def environment_digest(
-    project: Project, *, platform: str, sync_flags: Sequence[str]
-) -> str:
+def environment_digest(project: Project, *, platform: str, sync_flags: Sequence[str]) -> str:
     base = Path(project.path)
     h = hashlib.sha256()
     for fname in ("pyproject.toml", "uv.lock"):

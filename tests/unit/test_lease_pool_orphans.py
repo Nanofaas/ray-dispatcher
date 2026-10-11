@@ -2,9 +2,9 @@ from ray_dispatcher.scheduling import LeasePool
 
 
 def _pool(**kw):
-    return LeasePool({"h1": 2, "h2": 1}, token_factory=iter(
-        f"tok{i}" for i in range(100)
-    ).__next__, **kw)
+    return LeasePool(
+        {"h1": 2, "h2": 1}, token_factory=iter(f"tok{i}" for i in range(100)).__next__, **kw
+    )
 
 
 def test_quarantine_captures_registered_pid_paths():

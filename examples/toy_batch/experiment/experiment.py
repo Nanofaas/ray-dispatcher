@@ -1,4 +1,5 @@
 """Monte Carlo pi estimator. Reads config JSON from argv[1], writes result.json."""
+
 import json
 import pathlib
 import random

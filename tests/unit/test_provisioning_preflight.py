@@ -11,7 +11,9 @@ def _prov(results, **kw):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s", **kw,
+        runner_path="x",
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -58,11 +60,11 @@ def test_preflight_low_disk_raises():
 
 def test_provision_rejects_project_missing_uv_lock(tmp_path):
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
-    proj = Project(path=str(tmp_path), project_id="p", python="3.10.18",
-                   uv_version="0.11.25")
+    proj = Project(path=str(tmp_path), project_id="p", python="3.10.18", uv_version="0.11.25")
     inv = Inventory((RemoteHost("10.0.0.1", user="u"),))
     factory_calls = []
     with pytest.raises(ConfigurationError, match="uv.lock"):
-        provision(inv, proj, runner_path="/r.py",
-                  transport_factory=lambda h: factory_calls.append(h))
+        provision(
+            inv, proj, runner_path="/r.py", transport_factory=lambda h: factory_calls.append(h)
+        )
     assert factory_calls == []  # failed before touching any host

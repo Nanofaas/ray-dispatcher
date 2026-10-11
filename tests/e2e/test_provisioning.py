@@ -139,9 +139,7 @@ def test_lockfile_change_rebuilds_env(tmp_path, inventory, synth_project):
     assert result.returncode == 0, f"uv lock failed: {result.stderr}"
 
     # Overwrite run.py to prove the new dep is installed in the rebuilt env
-    (mutable_dir / "run.py").write_text(
-        "import tomli; print('tomli imported ok')\n"
-    )
+    (mutable_dir / "run.py").write_text("import tomli; print('tomli imported ok')\n")
 
     results_dir_2 = str(tmp_path / "results_lc2")
     job_with_dep = Job(id="with-dep", command=("python", "run.py"))

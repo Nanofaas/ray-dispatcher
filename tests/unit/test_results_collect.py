@@ -51,12 +51,14 @@ def test_collect_classifies_missing_required_and_optional(tmp_path):
 def test_collect_swallows_rsync_file_not_found(tmp_path):
     """TransportError with returncode 23 and file genuinely absent remotely -> missing."""
     from ray_dispatcher.ssh import CommandResult
+
     staging = tmp_path / "staging"
     staging.mkdir()
 
     class _PullRaises(FakeTransport):
-        def pull(self, remote: str, local: str, *, delete: bool = False,
-                 excludes: object = ()) -> None:
+        def pull(
+            self, remote: str, local: str, *, delete: bool = False, excludes: object = ()
+        ) -> None:
             raise TransportError("rsync failed (23): no such file", returncode=23)
 
     outputs = (OutputSpec(source="missing.txt", required=True),)
@@ -72,8 +74,9 @@ def test_collect_reraises_ssh_transport_error(tmp_path):
     staging.mkdir()
 
     class _PullRaises(FakeTransport):
-        def pull(self, remote: str, local: str, *, delete: bool = False,
-                 excludes: object = ()) -> None:
+        def pull(
+            self, remote: str, local: str, *, delete: bool = False, excludes: object = ()
+        ) -> None:
             raise TransportError("rsync failed (255): ssh refused", returncode=255)
 
     outputs = (OutputSpec(source="out.txt", required=True),)
@@ -95,6 +98,7 @@ class _FailingPullTransport(FakeTransport):
 
 def test_pull_failure_with_file_present_remotely_reraises(tmp_path):
     from ray_dispatcher.ssh import CommandResult
+
     staging = tmp_path / "staging"
     staging.mkdir()
     # `test -e` returns 0: the file exists remotely -> this is a transfer failure
@@ -105,6 +109,7 @@ def test_pull_failure_with_file_present_remotely_reraises(tmp_path):
 
 def test_pull_failure_with_file_absent_remotely_is_missing(tmp_path):
     from ray_dispatcher.ssh import CommandResult
+
     staging = tmp_path / "staging"
     staging.mkdir()
     # `test -e` returns 1: genuinely absent -> classified missing, no raise

@@ -20,9 +20,9 @@ def _project():
 
 
 def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})
 
 
@@ -46,6 +46,7 @@ def test_running_hosts_reports_host_while_job_in_flight(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_slow_transport, results_dir=str(tmp_path))

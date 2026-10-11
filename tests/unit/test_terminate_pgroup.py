@@ -51,13 +51,16 @@ def test_escalates_to_kill_after_grace():
 
 def test_deadline_limits_remote_calls():
     import time
+
     class RecordingTransport(FakeTransport):
         def __init__(self):
             super().__init__(run_results=_alive_for(0))
             self.timeouts = []
+
         def run(self, argv, *, timeout_s=None):
             self.timeouts.append(timeout_s)
             return super().run(argv, timeout_s=timeout_s)
+
     t = RecordingTransport()
-    assert terminate_process_group(t, 123, deadline_s=time.monotonic()+.2)
-    assert all(0 < value <= .2 for value in t.timeouts)
+    assert terminate_process_group(t, 123, deadline_s=time.monotonic() + 0.2)
+    assert all(0 < value <= 0.2 for value in t.timeouts)

@@ -7,11 +7,11 @@ def test_publish_renames_staging_into_outputs(tmp_path):
     staging = tmp_path / "staging"
     staging.mkdir()
     (staging / "a.json").write_text("payload")
-    outputs = tmp_path / "job" / "outputs"   # parent 'job' does not exist yet
+    outputs = tmp_path / "job" / "outputs"  # parent 'job' does not exist yet
     publish_job_outputs(staging, outputs)
     assert outputs.is_dir()
     assert (outputs / "a.json").read_text() == "payload"
-    assert not staging.exists()              # moved, not copied
+    assert not staging.exists()  # moved, not copied
 
 
 def test_publish_refuses_to_clobber_existing_nonempty_outputs(tmp_path):

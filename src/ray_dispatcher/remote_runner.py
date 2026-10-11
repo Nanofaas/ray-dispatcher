@@ -75,8 +75,12 @@ def run(manifest: dict[str, Any]) -> int:
                 pass
 
     threads = [
-        threading.Thread(target=drain, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)),
-        threading.Thread(target=drain, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)),
+        threading.Thread(
+            target=drain, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)
+        ),
+        threading.Thread(
+            target=drain, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)
+        ),
     ]
     for t in threads:
         t.start()

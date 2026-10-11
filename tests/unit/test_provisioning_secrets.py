@@ -8,10 +8,16 @@ from ray_dispatcher.ssh import CommandResult, FakeTransport
 def _prov(results, secrets, *, user="ubuntu"):
     p = HostProvisioner(
         FakeTransport(run_results=results),
-        Project(path="/local/proj", project_id="dfaas", python="3.10.18",
-                uv_version="0.11.25", secrets=secrets),
+        Project(
+            path="/local/proj",
+            project_id="dfaas",
+            python="3.10.18",
+            uv_version="0.11.25",
+            secrets=secrets,
+        ),
         RemoteHost(host="10.0.0.1", user=user),
-        runner_path="x", session_id="s",
+        runner_path="x",
+        session_id="s",
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -46,6 +52,7 @@ def test_copy_secrets_pushes_chmods_and_verifies_owner():
 
 def test_copy_secrets_pushes_with_chmod_no_window():
     """The secret's mode travels with the rsync transfer — no post-push chmod window."""
+
     def results(argv):
         if argv[0] == "sh" and "stat" in argv[2]:
             return CommandResult(0, "ubuntu\n", "", 0.0)  # owner matches

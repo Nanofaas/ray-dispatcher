@@ -42,8 +42,12 @@ def test_kills_remote_pgid_when_baseexception_interrupts_runner(tmp_path):
 
     with pytest.raises(KeyboardInterrupt):
         execute_attempt(
-            transport, _runtime(), job,
-            batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j1"),
+            transport,
+            _runtime(),
+            job,
+            batch_id="b1",
+            attempt=1,
+            local=JobLayout(str(tmp_path), "b1", "j1"),
         )
 
     sent = [c[1] for c in transport.calls if c[0] == "run"]
@@ -66,8 +70,12 @@ def test_missing_pid_marks_host_cleanup_unconfirmed(tmp_path):
 
     with pytest.raises(_HostCleanupError) as exc:
         execute_attempt(
-            transport, _runtime(), job,
-            batch_id="b1", attempt=1, local=JobLayout(str(tmp_path), "b1", "j2"),
+            transport,
+            _runtime(),
+            job,
+            batch_id="b1",
+            attempt=1,
+            local=JobLayout(str(tmp_path), "b1", "j2"),
         )
     assert isinstance(exc.value.interrupted, KeyboardInterrupt)
 

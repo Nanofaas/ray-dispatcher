@@ -15,13 +15,15 @@ def test_teardown_keeps_resources_until_drain_finishes(monkeypatch):
     backend._owns_runtime = True
     entered, release = threading.Event(), threading.Event()
     calls = []
+
     def drain():
         entered.set()
         assert release.wait(2)
-        calls.append('clean')
-    monkeypatch.setattr(backend, '_drain_jobs', drain, raising=False)
-    monkeypatch.setattr(ssh_ray.ray, 'kill', lambda a: calls.append('kill'))
-    monkeypatch.setattr(ssh_ray.ray, 'shutdown', lambda: calls.append('shutdown'))
+        calls.append("clean")
+
+    monkeypatch.setattr(backend, "_drain_jobs", drain, raising=False)
+    monkeypatch.setattr(ssh_ray.ray, "kill", lambda a: calls.append("kill"))
+    monkeypatch.setattr(ssh_ray.ray, "shutdown", lambda: calls.append("shutdown"))
     worker = threading.Thread(target=backend.teardown)
     worker.start()
     try:
@@ -31,40 +33,47 @@ def test_teardown_keeps_resources_until_drain_finishes(monkeypatch):
     finally:
         release.set()
         worker.join(2)
-    assert calls == ['clean', 'kill', 'shutdown']
+    assert calls == ["clean", "kill", "shutdown"]
 
 
 def test_failed_drain_preserves_resources_for_retry(monkeypatch):
     backend = SshRayBackend()
     actor = backend._actor = object()
-    backend._refs['token'] = object()
+    backend._refs["token"] = object()
     backend._owns_runtime = True
+
     def fail():
-        raise DispatcherError('host unreachable')
-    monkeypatch.setattr(backend, '_drain_jobs', fail, raising=False)
-    monkeypatch.setattr(ssh_ray.ray, 'kill', lambda _: pytest.fail('actor killed too soon'))
-    monkeypatch.setattr(ssh_ray.ray, 'shutdown', lambda: pytest.fail('runtime stopped too soon'))
-    with pytest.raises(DispatcherError, match='host unreachable'):
+        raise DispatcherError("host unreachable")
+
+    monkeypatch.setattr(backend, "_drain_jobs", fail, raising=False)
+    monkeypatch.setattr(ssh_ray.ray, "kill", lambda _: pytest.fail("actor killed too soon"))
+    monkeypatch.setattr(ssh_ray.ray, "shutdown", lambda: pytest.fail("runtime stopped too soon"))
+    with pytest.raises(DispatcherError, match="host unreachable"):
         backend.teardown(purge=True)
     assert backend._actor is actor
     assert backend._refs
-    monkeypatch.setattr(backend, '_drain_jobs', lambda: None)
-    monkeypatch.setattr(ssh_ray.ray, 'kill', lambda _: None)
-    monkeypatch.setattr(ssh_ray.ray, 'shutdown', lambda: None)
+    monkeypatch.setattr(backend, "_drain_jobs", lambda: None)
+    monkeypatch.setattr(ssh_ray.ray, "kill", lambda _: None)
+    monkeypatch.setattr(ssh_ray.ray, "shutdown", lambda: None)
     backend.teardown()
     assert backend._actor is None
 
 
 def test_dispatcher_keeps_handles_on_failed_teardown(monkeypatch):
     backend = SshRayBackend()
-    dispatcher = Dispatcher(Inventory((RemoteHost('host', 'user'),)),
-                            Project('.', 'test', '3.10.0', '0.11.25'), backend=backend)
-    handle = JobHandle('b', 'j', 'token')
+    dispatcher = Dispatcher(
+        Inventory((RemoteHost("host", "user"),)),
+        Project(".", "test", "3.10.0", "0.11.25"),
+        backend=backend,
+    )
+    handle = JobHandle("b", "j", "token")
     dispatcher._outstanding = [handle]
-    monkeypatch.setattr(backend, 'cancel', lambda h: None)
+    monkeypatch.setattr(backend, "cancel", lambda h: None)
+
     def fail(**kwargs):
-        raise DispatcherError('not clean')
-    monkeypatch.setattr(backend, 'teardown', fail)
+        raise DispatcherError("not clean")
+
+    monkeypatch.setattr(backend, "teardown", fail)
     with pytest.raises(DispatcherError):
         dispatcher.teardown()
     assert dispatcher._outstanding == [handle]

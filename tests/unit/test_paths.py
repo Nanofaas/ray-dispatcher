@@ -6,24 +6,30 @@ from ray_dispatcher.errors import PathValidationError
 from ray_dispatcher.paths import ensure_within, normalize_relative
 
 
-@pytest.mark.parametrize("good,expected", [
-    ("a/b/c", "a/b/c"),
-    ("./a/./b", "a/b"),
-    (".", "."),
-    ("config_files/eval_smoke.json", "config_files/eval_smoke.json"),
-])
+@pytest.mark.parametrize(
+    "good,expected",
+    [
+        ("a/b/c", "a/b/c"),
+        ("./a/./b", "a/b"),
+        (".", "."),
+        ("config_files/eval_smoke.json", "config_files/eval_smoke.json"),
+    ],
+)
 def test_normalize_relative_accepts(good, expected):
     assert normalize_relative(good) == expected
 
 
-@pytest.mark.parametrize("bad", [
-    "",
-    "/etc/passwd",
-    "../escape",
-    "a/../../b",
-    "a/../b",          # any '..' component is rejected, even if it would collapse
-    "with\x00nul",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "/etc/passwd",
+        "../escape",
+        "a/../../b",
+        "a/../b",  # any '..' component is rejected, even if it would collapse
+        "with\x00nul",
+    ],
+)
 def test_normalize_relative_rejects(bad):
     with pytest.raises(PathValidationError):
         normalize_relative(bad)

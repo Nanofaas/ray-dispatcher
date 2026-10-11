@@ -8,8 +8,7 @@ from ray_dispatcher.ssh import SshConfig, SshTransport, TransportError
 
 
 def _cfg():
-    return SshConfig(host="h", user="u", port=22, identity_file=None,
-                     known_hosts_file="/kh")
+    return SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file="/kh")
 
 
 def test_push_builds_remote_dst_and_runs_rsync(monkeypatch):
@@ -28,9 +27,11 @@ def test_push_builds_remote_dst_and_runs_rsync(monkeypatch):
 
 def test_pull_builds_remote_src(monkeypatch):
     seen = {}
-    monkeypatch.setattr(ssh.subprocess, "run",
-                        lambda argv, **kw: seen.update(argv=argv) or
-                        subprocess.CompletedProcess(argv, 0, "", ""))
+    monkeypatch.setattr(
+        ssh.subprocess,
+        "run",
+        lambda argv, **kw: seen.update(argv=argv) or subprocess.CompletedProcess(argv, 0, "", ""),
+    )
     SshTransport(_cfg()).pull("/remote/out", "/local/out")
     assert seen["argv"][-2:] == ["u@h:/remote/out", "/local/out"]
 

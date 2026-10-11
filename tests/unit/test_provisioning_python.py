@@ -10,7 +10,8 @@ def _prov(results):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s",
+        runner_path="x",
+        session_id="s",
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p

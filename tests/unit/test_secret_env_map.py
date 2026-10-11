@@ -4,8 +4,9 @@ from ray_dispatcher.scheduling import secret_env_map
 
 
 def _project(secrets):
-    return Project(path="/p", project_id="dfaas", python="3.10.18",
-                   uv_version="0.11.25", secrets=secrets)
+    return Project(
+        path="/p", project_id="dfaas", python="3.10.18", uv_version="0.11.25", secrets=secrets
+    )
 
 
 def test_maps_env_var_to_remote_secret_path():

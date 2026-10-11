@@ -178,9 +178,7 @@ class HostProvisioner:
                 raise _StepError(f"required tool {tool!r} missing on {self.host.host}")
         root = shlex.quote(self._lo.root)
         # df -Pk gives POSIX one-line-per-fs output; available 1024-blocks is column 4.
-        r = self._checked(
-            ["sh", "-c", f"mkdir -p {root} && df -Pk {root} | tail -1"], "disk check"
-        )
+        r = self._checked(["sh", "-c", f"mkdir -p {root} && df -Pk {root} | tail -1"], "disk check")
         try:
             avail_kb = int(r.stdout.split()[3])
         except (IndexError, ValueError) as exc:
@@ -226,9 +224,7 @@ class HostProvisioner:
             "python version check",
         ).stdout.strip()
         if got != want:
-            raise _StepError(
-                f"interpreter on {self.host.host} is {got!r}, expected {want!r}"
-            )
+            raise _StepError(f"interpreter on {self.host.host} is {got!r}, expected {want!r}")
 
     def _sync_source(self) -> str:
         staging = f"{self._lo.source}.staging"
@@ -246,9 +242,13 @@ class HostProvisioner:
         # The `mv staging source` rename is atomic within one parent dir; the brief
         # window where source is absent is acceptable pre-runtime (no readers yet).
         self._checked(
-            ["sh", "-c", f"set -e; if [ ! -e {src} ] && [ -e {old} ]; then mv {old} {src}; fi; "
-                         f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; "
-                         f"mv {stg} {src}; rm -rf {old}"],
+            [
+                "sh",
+                "-c",
+                f"set -e; if [ ! -e {src} ] && [ -e {old} ]; then mv {old} {src}; fi; "
+                f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; "
+                f"mv {stg} {src}; rm -rf {old}",
+            ],
             "source atomic replace",
         )
         digest = source_digest(self.project.path, self.project.exclude)
@@ -262,10 +262,17 @@ class HostProvisioner:
         env_dir = self._lo.env_dir(digest)
         venv = self._lo.env_venv(digest)
         manifest_path = self._lo.env_manifest(digest)
-        valid = self.t.run(
-            ["sh", "-c", f"test -f {shlex.quote(manifest_path)} && "
-                         f"test -x {shlex.quote(venv)}/bin/python"]
-        ).returncode == 0
+        valid = (
+            self.t.run(
+                [
+                    "sh",
+                    "-c",
+                    f"test -f {shlex.quote(manifest_path)} && "
+                    f"test -x {shlex.quote(venv)}/bin/python",
+                ]
+            ).returncode
+            == 0
+        )
         if valid and not self.force:
             return digest
 
@@ -275,13 +282,19 @@ class HostProvisioner:
             ["sh", "-c", f"rm -rf {shlex.quote(staging)}; mkdir -p {shlex.quote(staging)}"],
             "env staging mkdir",
         )
-        sync = [uv, "sync", "--project", self._lo.source, *SYNC_FLAGS,
-                "--python", self.project.python]
+        sync = [
+            uv,
+            "sync",
+            "--project",
+            self._lo.source,
+            *SYNC_FLAGS,
+            "--python",
+            self.project.python,
+        ]
         for group in self.project.dependency_groups:
             sync += ["--group", group]
         self._checked(
-            ["sh", "-c",
-             f"UV_PROJECT_ENVIRONMENT={shlex.quote(staging_venv)} {shlex.join(sync)}"],
+            ["sh", "-c", f"UV_PROJECT_ENVIRONMENT={shlex.quote(staging_venv)} {shlex.join(sync)}"],
             "uv sync",
         )
         # ponytail: venv relocatability after the atomic move is reconfirmed by the
@@ -291,23 +304,29 @@ class HostProvisioner:
             ["sh", "-c", f"{shlex.quote(staging_venv)}/bin/python -c 'import sys'"],
             "venv smoke check",
         )
-        manifest = json.dumps({
-            "environment_digest": digest,
-            "python": self.project.python,
-            "uv_version": self.project.uv_version,
-            "platform": platform,
-            "dependency_groups": list(self.project.dependency_groups),
-            "sync_flags": list(SYNC_FLAGS),
-        })
+        manifest = json.dumps(
+            {
+                "environment_digest": digest,
+                "python": self.project.python,
+                "uv_version": self.project.uv_version,
+                "platform": platform,
+                "dependency_groups": list(self.project.dependency_groups),
+                "sync_flags": list(SYNC_FLAGS),
+            }
+        )
         self._write_remote_file(f"{staging}/environment-manifest.json", manifest)
         qenv, qstg = shlex.quote(env_dir), shlex.quote(staging)
         qold = shlex.quote(env_dir + ".old")
         self._checked(
-            ["sh", "-c", f"set -e; mkdir -p {shlex.quote(self._lo.project)}/envs; "
-                         f"if [ ! -e {qenv} ] && [ -e {qold} ]; then mv {qold} {qenv}; fi; "
-                         f"rm -rf {qold}; "
-                         f"if [ -e {qenv} ]; then mv {qenv} {qold}; fi; "
-                         f"mv {qstg} {qenv}; rm -rf {qold}"],
+            [
+                "sh",
+                "-c",
+                f"set -e; mkdir -p {shlex.quote(self._lo.project)}/envs; "
+                f"if [ ! -e {qenv} ] && [ -e {qold} ]; then mv {qold} {qenv}; fi; "
+                f"rm -rf {qold}; "
+                f"if [ -e {qenv} ]; then mv {qenv} {qold}; fi; "
+                f"mv {qstg} {qenv}; rm -rf {qold}",
+            ],
             "env atomic publish",
         )
         return digest
@@ -329,9 +348,7 @@ class HostProvisioner:
         if not self.project.secrets:
             return
         sdir = shlex.quote(self._lo.secrets)
-        self._checked(
-            ["sh", "-c", f"mkdir -p {sdir} && chmod 700 {sdir}"], "secrets dir"
-        )
+        self._checked(["sh", "-c", f"mkdir -p {sdir} && chmod 700 {sdir}"], "secrets dir")
         for secret in self.project.secrets:
             remote = f"{self._lo.secrets}/{secret.remote_name}"
             self.t.push(secret.source, remote, chmod=f"F{secret.mode:o}")
@@ -411,9 +428,7 @@ class ProvisioningOutcome:
         for _, heartbeat in self.sessions.values():
             heartbeat.raise_if_failed()
 
-    def set_session_loss_callback(
-        self, callback: Callable[[SessionLockLostError], None]
-    ) -> None:
+    def set_session_loss_callback(self, callback: Callable[[SessionLockLostError], None]) -> None:
         for _, heartbeat in self.sessions.values():
             heartbeat.set_failure_callback(callback)
 
@@ -459,13 +474,18 @@ def provision(
     factory = transport_factory or _default_transport
     sid = session_id or _secrets.token_hex(16)
 
-    def work(host: RemoteHost) -> tuple[
-        HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None
-    ]:
+    def work(
+        host: RemoteHost,
+    ) -> tuple[HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None]:
         try:
             prov = HostProvisioner(
-                factory(host), project, host,
-                runner_path=runner_path, session_id=sid, force=force, min_disk_mb=min_disk_mb,
+                factory(host),
+                project,
+                host,
+                runner_path=runner_path,
+                session_id=sid,
+                force=force,
+                min_disk_mb=min_disk_mb,
             )
             return prov.provision()
         except Exception as exc:  # noqa: BLE001 — factory/connect failure => host unavailable, never crash the run

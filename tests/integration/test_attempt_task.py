@@ -49,10 +49,18 @@ def test_attempt_task_succeeds_with_fake_transport(tmp_path):
                 if argv[0] == "cat":
                     return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
                 return CommandResult(0, "", "", 0.0)
+
             return FakeTransport(run_results=results)
 
         ref = _attempt_task.remote(  # type: ignore[attr-defined]
-            job, "batch1", local, runtimes, inv_hosts, actor, _ok_transport, RetryPolicy(),
+            job,
+            "batch1",
+            local,
+            runtimes,
+            inv_hosts,
+            actor,
+            _ok_transport,
+            RetryPolicy(),
             heartbeat_interval_s=1.0,
         )
         result = ray.get(ref)
@@ -80,10 +88,18 @@ def test_attempt_task_catch_all_returns_internal_on_unexpected_exception(tmp_pat
                 if argv[0] == "cat":
                     return CommandResult(0, "not-json!", "", 0.0)  # malformed result.json
                 return CommandResult(0, "", "", 0.0)
+
             return FakeTransport(run_results=results)
 
         ref = _attempt_task.remote(  # type: ignore[attr-defined]
-            job, "batch1", local, runtimes, inv_hosts, actor, _bad_transport, RetryPolicy(),
+            job,
+            "batch1",
+            local,
+            runtimes,
+            inv_hosts,
+            actor,
+            _bad_transport,
+            RetryPolicy(),
         )
         result = ray.get(ref)
         assert result.status == JobStatus.FAILED

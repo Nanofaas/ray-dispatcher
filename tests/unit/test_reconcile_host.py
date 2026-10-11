@@ -23,7 +23,7 @@ def test_reconcile_terminates_recorded_pgid():
             return CommandResult(0, '{"pid": 1234, "pgid": 4321}', "", 0.0)
         if argv[:2] == ["kill", "-0"]:
             return CommandResult(1, "", "", 0.0)  # probe: group already gone
-        return CommandResult(0, "", "", 0.0)      # TERM/KILL succeed
+        return CommandResult(0, "", "", 0.0)  # TERM/KILL succeed
 
     t = FakeTransport(run_results=results)
     assert reconcile_host(t, "/x/pid.json") is True
@@ -45,6 +45,7 @@ def test_reconcile_rejects_unsafe_pgid_without_killing():
     # pgid 0 == the caller's own process group; killing -0 would SIGKILL the
     # remote shell. A recorded pgid <= 1 is never a real runner group -> stay quarantined.
     for bad in (0, 1, -5):
+
         def results(argv, bad=bad):
             if argv[0] == "cat":
                 return CommandResult(0, f'{{"pid": 1234, "pgid": {bad}}}', "", 0.0)

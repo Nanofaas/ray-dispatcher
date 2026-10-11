@@ -4,19 +4,23 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 

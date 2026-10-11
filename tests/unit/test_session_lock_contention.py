@@ -17,11 +17,12 @@ class LocalTransport:
     def __init__(self, home: Path) -> None:
         self.home = home
 
-    def run(
-        self, argv: Sequence[str], *, timeout_s: float | None = None
-    ) -> CommandResult:
+    def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult:
         completed = subprocess.run(
-            [arg.replace("now = time.time()", "now = 1000.0") if isinstance(arg, str) else arg for arg in argv],
+            [
+                arg.replace("now = time.time()", "now = 1000.0") if isinstance(arg, str) else arg
+                for arg in argv
+            ],
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -53,9 +54,7 @@ class SplitRaceTransport(LocalTransport):
         self.first_confirmed = first_confirmed
         self.reads = 0
 
-    def run(
-        self, argv: Sequence[str], *, timeout_s: float | None = None
-    ) -> CommandResult:
+    def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult:
         if argv[:2] == ["sh", "-c"] and "mv -f" in argv[2] and not self.first:
             assert self.first_confirmed.wait(timeout=5)
         result = super().run(argv, timeout_s=timeout_s)
@@ -93,9 +92,7 @@ def test_live_lock_from_other_session_raises(tmp_path: Path):
 def test_stale_or_corrupt_lock_is_taken_over(tmp_path: Path, heartbeat: object):
     _write_owner(tmp_path, "other", heartbeat)
 
-    SessionLock(
-        LocalTransport(tmp_path), "mine", ttl_s=60
-    ).acquire()
+    SessionLock(LocalTransport(tmp_path), "mine", ttl_s=60).acquire()
 
     assert json.loads(_owner_file(tmp_path).read_text())["session_id"] == "mine"
 
@@ -164,8 +161,8 @@ def test_concurrent_stale_takeover_has_exactly_one_winner(tmp_path: Path):
 
 def test_client_clock_skew_cannot_steal_live_lock(tmp_path):
     transport = LocalTransport(tmp_path)
-    first = SessionLock(transport, 'first')
-    second = SessionLock(transport, 'second')
+    first = SessionLock(transport, "first")
+    second = SessionLock(transport, "second")
     first.now = lambda: 1000
     second.now = lambda: 1061
     first.acquire()

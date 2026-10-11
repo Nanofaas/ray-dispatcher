@@ -134,9 +134,7 @@ class Project:
         if not _EXACT_VERSION_RE.fullmatch(self.python):
             raise ModelValidationError(f"python must be exact X.Y.Z, got {self.python!r}")
         if not _EXACT_VERSION_RE.fullmatch(self.uv_version):
-            raise ModelValidationError(
-                f"uv_version must be exact X.Y.Z, got {self.uv_version!r}"
-            )
+            raise ModelValidationError(f"uv_version must be exact X.Y.Z, got {self.uv_version!r}")
         names = [s.remote_name for s in self.secrets]
         if len(names) != len(set(names)):
             raise ModelValidationError("duplicate secret remote_name in project")
@@ -147,8 +145,8 @@ class Project:
 
 @dataclass(frozen=True)
 class InputSpec:
-    source: str                       # absolute or Project.path-relative local path
-    destination: str                  # normalized run-root-relative POSIX path
+    source: str  # absolute or Project.path-relative local path
+    destination: str  # normalized run-root-relative POSIX path
 
     def __post_init__(self) -> None:
         if not self.source:
@@ -160,14 +158,12 @@ class InputSpec:
 
 @dataclass(frozen=True)
 class OutputSpec:
-    source: str                       # normalized run-root-relative POSIX path
-    destination: str | None = None    # relative to the job's local outputs dir
+    source: str  # normalized run-root-relative POSIX path
+    destination: str | None = None  # relative to the job's local outputs dir
     required: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "source", normalize_relative(self.source, field="output source")
-        )
+        object.__setattr__(self, "source", normalize_relative(self.source, field="output source"))
         if self.destination is not None:
             object.__setattr__(
                 self,
@@ -212,8 +208,8 @@ class Job:
             raise ModelValidationError("timeout_s must be finite and > 0 when set")
         destinations = [PurePosixPath(o.destination or o.source).parts for o in self.outputs]
         for i, left in enumerate(destinations):
-            for right in destinations[i + 1:]:
-                if left == right or left == right[:len(left)] or right == left[:len(right)]:
+            for right in destinations[i + 1 :]:
+                if left == right or left == right[: len(left)] or right == left[: len(right)]:
                     raise ModelValidationError("output destinations must not overlap")
         object.__setattr__(self, "cwd", normalize_relative(self.cwd, field="cwd"))
 

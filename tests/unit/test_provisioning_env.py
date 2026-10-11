@@ -8,10 +8,17 @@ def _prov(tmp_path, results, *, groups=(), **kw):
     (tmp_path / "uv.lock").write_text("# lock\n")
     p = HostProvisioner(
         FakeTransport(run_results=results),
-        Project(path=str(tmp_path), project_id="dfaas", python="3.10.18",
-                uv_version="0.11.25", dependency_groups=groups),
+        Project(
+            path=str(tmp_path),
+            project_id="dfaas",
+            python="3.10.18",
+            uv_version="0.11.25",
+            dependency_groups=groups,
+        ),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s", **kw,
+        runner_path="x",
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p

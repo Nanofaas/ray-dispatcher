@@ -20,23 +20,26 @@ def _attempt(n=1, status=JobStatus.SUCCEEDED, fk=None):
 
 def test_write_attempt_json_serializes_enums_as_values(tmp_path):
     p = tmp_path / "attempt.json"
-    write_attempt_json(p, _attempt(status=JobStatus.FAILED, fk=FailureKind.COMMAND),
-                       missing_optional=("logs/extra.txt",))
+    write_attempt_json(
+        p,
+        _attempt(status=JobStatus.FAILED, fk=FailureKind.COMMAND),
+        missing_optional=("logs/extra.txt",),
+    )
     doc = json.loads(p.read_text())
     assert doc["number"] == 1
-    assert doc["status"] == "failed"               # enum -> .value
-    assert doc["failure_kind"] == "command"        # enum -> .value
+    assert doc["status"] == "failed"  # enum -> .value
+    assert doc["failure_kind"] == "command"  # enum -> .value
     assert doc["returncode"] == 1
     assert doc["missing_optional"] == ["logs/extra.txt"]
 
 
 def test_write_attempt_json_null_failure_kind(tmp_path):
     p = tmp_path / "attempt.json"
-    write_attempt_json(p, _attempt())              # success: no failure_kind
+    write_attempt_json(p, _attempt())  # success: no failure_kind
     doc = json.loads(p.read_text())
     assert doc["status"] == "succeeded"
     assert doc["failure_kind"] is None
-    assert doc["missing_optional"] == []           # default empty
+    assert doc["missing_optional"] == []  # default empty
 
 
 def test_write_result_json_includes_nested_attempts(tmp_path):

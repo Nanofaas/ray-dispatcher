@@ -21,9 +21,9 @@ def _project():
 
 
 def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})
 
 
@@ -43,6 +43,7 @@ def test_dispatcher_run_succeeds_end_to_end(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_ok_transport, results_dir=str(tmp_path))
@@ -73,12 +74,14 @@ def test_dispatcher_run_raises_batch_failed_when_raise_on_failure(tmp_path, monk
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 1, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_fail_transport, results_dir=str(tmp_path))
     with pytest.raises(BatchFailedError) as exc_info:
-        with Dispatcher(inv, _project(), backend=backend, raise_on_failure=True,
-                        results_dir=str(tmp_path)) as d:
+        with Dispatcher(
+            inv, _project(), backend=backend, raise_on_failure=True, results_dir=str(tmp_path)
+        ) as d:
             d.setup()
             d.run([Job(id="j1", command=("fail",))])
     assert len(exc_info.value.results) == 1
@@ -100,6 +103,7 @@ def test_dispatcher_submit_raises_batch_exists_error(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_ok_transport, results_dir=str(tmp_path))

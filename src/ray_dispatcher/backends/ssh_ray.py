@@ -115,7 +115,9 @@ class _ActorLeaseHandle:
     def _heartbeat(self, token: str) -> None:
         while not self._stop.wait(self._heartbeat_interval_s):
             try:
-                alive = ray.get(self._actor.heartbeat.remote(token), timeout=self._heartbeat_interval_s)
+                alive = ray.get(
+                    self._actor.heartbeat.remote(token), timeout=self._heartbeat_interval_s
+                )
             except Exception:
                 self._lost.set()
                 break
@@ -152,15 +154,27 @@ def _attempt_task(
     # covers the pre-start window. Both terminate as a CANCELLED JobResult (§8.1).
     except (KeyboardInterrupt, ray.exceptions.TaskCancelledError):
         result = JobResult(
-            id=job.id, batch_id=batch_id, status=JobStatus.CANCELLED,
-            returncode=None, duration_s=0.0, host=None, output_dir=None,
-            attempts=(), error="cancelled",
+            id=job.id,
+            batch_id=batch_id,
+            status=JobStatus.CANCELLED,
+            returncode=None,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error="cancelled",
         )
     except Exception as exc:
         result = JobResult(
-            id=job.id, batch_id=batch_id, status=JobStatus.FAILED,
-            returncode=None, duration_s=0.0, host=None, output_dir=None,
-            attempts=(), error=f"INTERNAL: {type(exc).__name__}: {exc}",
+            id=job.id,
+            batch_id=batch_id,
+            status=JobStatus.FAILED,
+            returncode=None,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error=f"INTERNAL: {type(exc).__name__}: {exc}",
         )
     write_result_json(local.result_json, result)
     return result
@@ -258,10 +272,13 @@ class SshRayBackend(ExecutionBackend):
         # Provision first; provision() raises NoHealthyHostsError if none succeed,
         # so Ray is never started for an empty healthy set (§3.2.2).
         outcome = provision(
-            inventory, project,
-            runner_path=self._runner_path, transport_factory=self._transport_factory,
+            inventory,
+            project,
+            runner_path=self._runner_path,
+            transport_factory=self._transport_factory,
             min_disk_mb=self._min_disk_mb,
-            require_all_hosts=self._require_all_hosts, force=force,
+            require_all_hosts=self._require_all_hosts,
+            force=force,
         )
         self._outcome = outcome
         try:
@@ -334,6 +351,7 @@ class SshRayBackend(ExecutionBackend):
         actor = self._actor
         if actor is None:
             return
+
         def get(ref: object) -> object:
             if deadline_s is None:
                 return ray.get(ref)  # type: ignore[call-overload]
@@ -349,7 +367,8 @@ class SshRayBackend(ExecutionBackend):
             try:
                 clean = bool(pid_paths) and all(
                     reconcile_host(transport, p, deadline_s=deadline_s)
-                    if deadline_s is not None else reconcile_host(transport, p)
+                    if deadline_s is not None
+                    else reconcile_host(transport, p)
                     for p in pid_paths
                 )
             except Exception:  # noqa: BLE001 — unreachable host stays quarantined
@@ -385,8 +404,14 @@ class SshRayBackend(ExecutionBackend):
         token = uuid.uuid4().hex
         local = JobLayout(self._results_dir, batch_id, job.id)
         ref = _attempt_task.remote(
-            job, batch_id, local, self._runtimes, self._inv_hosts,
-            self._actor, self._transport_factory, self._retry_policy,
+            job,
+            batch_id,
+            local,
+            self._runtimes,
+            self._inv_hosts,
+            self._actor,
+            self._transport_factory,
+            self._retry_policy,
             self._heartbeat_interval_s,
         )
         self._refs[token] = ref
@@ -434,9 +459,17 @@ class SshRayBackend(ExecutionBackend):
         path = JobLayout(self._results_dir, handle.batch_id, handle.job_id).result_json
         if path.exists():
             return read_result_json(path)
-        result = JobResult(id=handle.job_id, batch_id=handle.batch_id, status=JobStatus.CANCELLED,
-                           returncode=None, duration_s=0, host=None, output_dir=None,
-                           attempts=(), error="cancelled")
+        result = JobResult(
+            id=handle.job_id,
+            batch_id=handle.batch_id,
+            status=JobStatus.CANCELLED,
+            returncode=None,
+            duration_s=0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error="cancelled",
+        )
         write_result_json(path, result)
         return result
 
@@ -482,7 +515,9 @@ class SshRayBackend(ExecutionBackend):
             if remaining <= 0:
                 raise DispatcherError("remote cleanup not confirmed; session locks retained")
             if pending:
-                _, pending = ray.wait(pending, num_returns=len(pending), timeout=min(0.05, remaining))
+                _, pending = ray.wait(
+                    pending, num_returns=len(pending), timeout=min(0.05, remaining)
+                )
             actor = self._actor
             if actor is None:
                 if pending:

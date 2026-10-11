@@ -91,7 +91,7 @@ class LeasePool:
         self._ttl = lease_ttl_s
         self._now = now
         self._token_factory = token_factory
-        self._pid_paths: dict[str, str] = {}      # lease token -> remote pid.json path
+        self._pid_paths: dict[str, str] = {}  # lease token -> remote pid.json path
         self._orphans: dict[str, list[str]] = {}  # host -> pid paths dropped by quarantine
 
     def _live_hosts(self) -> set[str]:
@@ -200,8 +200,9 @@ def _parse_pgid(stdout: str) -> int | None:
     return pgid if pgid > 1 else None
 
 
-def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0,
-                   deadline_s: float | None = None) -> bool:
+def reconcile_host(
+    transport: Transport, pid_file: str, *, grace_s: float = 10.0, deadline_s: float | None = None
+) -> bool:
     """Terminate any orphaned process group recorded for a lost attempt (spec §8.2/§8.1).
 
     Returns True when the host is confirmed clean: no pid file recorded, or the
@@ -331,15 +332,21 @@ def _run_checked(
 
 
 def _invoke_runner(
-    transport: Transport, runner: str, run: RunPaths, *,
-    timeout_s: float | None, check_lease: Callable[[], None] | None = None,
+    transport: Transport,
+    runner: str,
+    run: RunPaths,
+    *,
+    timeout_s: float | None,
+    check_lease: Callable[[], None] | None = None,
 ) -> bool:
     """Supervise one invocation; return whether it timed out after confirmed cleanup."""
     errors: list[BaseException] = []
 
     def invoke() -> None:
         try:
-            _run_checked(transport, ["python3", runner, run.manifest], "invoke runner", unbounded=True)
+            _run_checked(
+                transport, ["python3", runner, run.manifest], "invoke runner", unbounded=True
+            )
         except BaseException as exc:
             errors.append(exc)
 
@@ -352,8 +359,11 @@ def _invoke_runner(
                 check_lease()
             if deadline is not None and time.monotonic() >= deadline:
                 raise TimeoutError("job timed out")
-            worker.join(timeout=min(0.05, max(0, deadline - time.monotonic()))
-                        if deadline is not None else 0.05)
+            worker.join(
+                timeout=min(0.05, max(0, deadline - time.monotonic()))
+                if deadline is not None
+                else 0.05
+            )
         if errors:
             raise errors[0]
         if check_lease is not None:
@@ -397,15 +407,23 @@ def execute_attempt(
     parent = posixpath.dirname(run.base)
     _run_checked(
         transport,
-        ["sh", "-c", f"mkdir -p {shlex.quote(parent)} && mkdir {shlex.quote(run.base)} "
-                     f"&& mkdir {shlex.quote(run.run_root)}"],
+        [
+            "sh",
+            "-c",
+            f"mkdir -p {shlex.quote(parent)} && mkdir {shlex.quote(run.base)} "
+            f"&& mkdir {shlex.quote(run.run_root)}",
+        ],
         "create run dir",
     )
     # §7.3 copy provisioned source on the VM; .venv -> the immutable env.
     _run_checked(
         transport,
-        ["sh", "-c", f"rsync -a {shlex.quote(runtime.layout.source)}/ {shlex.quote(run.run_root)}/ "
-                     f"&& ln -s {shlex.quote(venv)} {shlex.quote(run.venv)}"],
+        [
+            "sh",
+            "-c",
+            f"rsync -a {shlex.quote(runtime.layout.source)}/ {shlex.quote(run.run_root)}/ "
+            f"&& ln -s {shlex.quote(venv)} {shlex.quote(run.venv)}",
+        ],
         "copy source",
     )
     # §7.4 push each input to its explicit (normalized, run-root-relative) destination.
@@ -419,8 +437,10 @@ def execute_attempt(
             ["sh", "-c", f"mkdir -p {shlex.quote(posixpath.dirname(remote_dest))}"],
             "input dir",
         )
-        local_src = inp.source if os.path.isabs(inp.source) else os.path.join(
-            runtime.project_path, inp.source
+        local_src = (
+            inp.source
+            if os.path.isabs(inp.source)
+            else os.path.join(runtime.project_path, inp.source)
         )
         transport.push(local_src, remote_dest)
     # §7.5 write the runner manifest (no shell assembled from user strings).
@@ -428,25 +448,33 @@ def execute_attempt(
     write_remote_file(transport, run.manifest, json.dumps(manifest))
     cleanup_error = None
     try:
-        timed_out = _invoke_runner(transport, runner, run, timeout_s=job.timeout_s,
-                                   check_lease=check_lease)
+        timed_out = _invoke_runner(
+            transport, runner, run, timeout_s=job.timeout_s, check_lease=check_lease
+        )
     except _HostCleanupError as exc:
         if not isinstance(exc.interrupted, TimeoutError):
             raise
         cleanup_error = exc
         timed_out = True
     if timed_out:
-        for remote, local_log in ((run.stdout, local.stdout_log(attempt)),
-                                  (run.stderr, local.stderr_log(attempt))):
+        for remote, local_log in (
+            (run.stdout, local.stdout_log(attempt)),
+            (run.stderr, local.stderr_log(attempt)),
+        ):
             try:
                 transport.pull(remote, str(local_log))
             except TransportError:
                 pass
         result = AttemptResult(
-            number=attempt, host=runtime.host, status=JobStatus.TIMED_OUT,
-            returncode=None, duration_s=float(job.timeout_s or 0),
-            stdout_log=str(local.stdout_log(attempt)), stderr_log=str(local.stderr_log(attempt)),
-            failure_kind=FailureKind.TIMEOUT, error="job timed out",
+            number=attempt,
+            host=runtime.host,
+            status=JobStatus.TIMED_OUT,
+            returncode=None,
+            duration_s=float(job.timeout_s or 0),
+            stdout_log=str(local.stdout_log(attempt)),
+            stderr_log=str(local.stderr_log(attempt)),
+            failure_kind=FailureKind.TIMEOUT,
+            error="job timed out",
         )
         write_attempt_json(local.attempt_json(attempt), result)
         if cleanup_error is not None:
@@ -593,40 +621,47 @@ def run_job(
         except NoHealthyHostsError as exc:
             if not attempts:
                 raise
-            return replace(assemble_job_result(job.id, batch_id, attempts,
-                                               outputs_dir=str(local.outputs_dir)),
-                           status=JobStatus.FAILED, output_dir=None, error=str(exc))
+            return replace(
+                assemble_job_result(job.id, batch_id, attempts, outputs_dir=str(local.outputs_dir)),
+                status=JobStatus.FAILED,
+                output_dir=None,
+                error=str(exc),
+            )
         try:
             runtime = runtime_for(leased.host)
             # Register the attempt's pid file so the sweeper can reconcile the host
             # if this worker dies mid-attempt (§8.2). Inside the try so a raising
             # register_pid still releases the lease via the finally below.
-            lease.register_pid(
-                leased.token, runtime.layout.run_paths(batch_id, job.id, n).pid
-            )
+            lease.register_pid(leased.token, runtime.layout.run_paths(batch_id, job.id, n).pid)
             result = execute_attempt(
-                transport_for(leased.host), runtime, job,
-                batch_id=batch_id, attempt=n, local=local, check_lease=lease.raise_if_lost,
+                transport_for(leased.host),
+                runtime,
+                job,
+                batch_id=batch_id,
+                attempt=n,
+                local=local,
+                check_lease=lease.raise_if_lost,
             )
         except _HostCleanupError as e:
             lease.quarantine(leased.host)
             if e.result is not None:
                 result = e.result
             elif isinstance(e.interrupted, _LeaseLostError):
-                result = _failed_attempt(n, leased.host, FailureKind.HOST_LOST,
-                                         str(e.interrupted), local)
-            elif isinstance(e.interrupted, TransportError):
                 result = _failed_attempt(
-                    n, leased.host, FailureKind.SSH, str(e.interrupted), local
+                    n, leased.host, FailureKind.HOST_LOST, str(e.interrupted), local
                 )
+            elif isinstance(e.interrupted, TransportError):
+                result = _failed_attempt(n, leased.host, FailureKind.SSH, str(e.interrupted), local)
             elif isinstance(e.interrupted, DispatcherError):
                 result = _failed_attempt(
                     n, leased.host, FailureKind.INTERNAL, str(e.interrupted), local
                 )
             elif isinstance(e.interrupted, KeyboardInterrupt):
-                result = replace(_failed_attempt(n, leased.host, FailureKind.INTERNAL,
-                                                  "cancelled", local),
-                                 status=JobStatus.CANCELLED, failure_kind=None)
+                result = replace(
+                    _failed_attempt(n, leased.host, FailureKind.INTERNAL, "cancelled", local),
+                    status=JobStatus.CANCELLED,
+                    failure_kind=None,
+                )
                 write_attempt_json(local.attempt_json(n), result)
             elif e.interrupted is not None:
                 raise e.interrupted from e
@@ -636,8 +671,11 @@ def run_job(
             lease.quarantine(leased.host)
             result = _failed_attempt(n, leased.host, FailureKind.HOST_LOST, str(e), local)
         except KeyboardInterrupt:
-            result = replace(_failed_attempt(n, leased.host, FailureKind.INTERNAL, "cancelled", local),
-                             status=JobStatus.CANCELLED, failure_kind=None)
+            result = replace(
+                _failed_attempt(n, leased.host, FailureKind.INTERNAL, "cancelled", local),
+                status=JobStatus.CANCELLED,
+                failure_kind=None,
+            )
             write_attempt_json(local.attempt_json(n), result)
         except TransportError as e:
             result = _failed_attempt(n, leased.host, FailureKind.SSH, str(e), local)
@@ -651,9 +689,7 @@ def run_job(
             policy, result.failure_kind, len(attempts)
         ):
             break
-    return assemble_job_result(
-        job.id, batch_id, attempts, outputs_dir=str(local.outputs_dir)
-    )
+    return assemble_job_result(job.id, batch_id, attempts, outputs_dir=str(local.outputs_dir))
 
 
 class LeaseService:
@@ -673,9 +709,7 @@ class LeaseService:
         now: Callable[[], float] = time.monotonic,
         token_factory: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
-        self._pool = LeasePool(
-            hosts, lease_ttl_s=lease_ttl_s, now=now, token_factory=token_factory
-        )
+        self._pool = LeasePool(hosts, lease_ttl_s=lease_ttl_s, now=now, token_factory=token_factory)
         self._cond = asyncio.Condition()
 
     async def acquire(self, attempt_id: str, exclude: Iterable[str] = ()) -> Lease:

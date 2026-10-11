@@ -14,27 +14,33 @@ def test_remotehost_valid_defaults():
     assert h.known_hosts_file == "~/.ssh/known_hosts"
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"host": "", "user": "ubuntu"},
-    {"host": "h", "user": ""},
-    {"host": "h", "user": "u", "slots": 0},
-    {"host": "h", "user": "u", "slots": -1},
-    {"host": "h", "user": "u", "port": 0},
-    {"host": "h", "user": "u", "port": 70000},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"host": "", "user": "ubuntu"},
+        {"host": "h", "user": ""},
+        {"host": "h", "user": "u", "slots": 0},
+        {"host": "h", "user": "u", "slots": -1},
+        {"host": "h", "user": "u", "port": 0},
+        {"host": "h", "user": "u", "port": 70000},
+    ],
+)
 def test_remotehost_rejects(kwargs):
     with pytest.raises(ModelValidationError):
         RemoteHost(**kwargs)
 
 
-@pytest.mark.parametrize("field,value", [
-    ("slots", "1"),
-    ("slots", 1.5),
-    ("slots", True),
-    ("port", "22"),
-    ("port", 22.5),
-    ("port", True),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("slots", "1"),
+        ("slots", 1.5),
+        ("slots", True),
+        ("port", "22"),
+        ("port", 22.5),
+        ("port", True),
+    ],
+)
 def test_remotehost_rejects_noninteger_slots_and_port(field, value):
     kwargs = {"host": "h", "user": "u", field: value}
     with pytest.raises(ModelValidationError):
@@ -56,10 +62,12 @@ def test_inventory_rejects_duplicates():
 def test_inventory_rejects_same_host_name_different_port():
     # the backend keys runtimes/leases by host name alone, so the name must be unique
     with pytest.raises(ModelValidationError, match="duplicate host"):
-        Inventory((
-            RemoteHost("10.0.0.1", user="ubuntu", port=22),
-            RemoteHost("10.0.0.1", user="ubuntu", port=2222),
-        ))
+        Inventory(
+            (
+                RemoteHost("10.0.0.1", user="ubuntu", port=22),
+                RemoteHost("10.0.0.1", user="ubuntu", port=2222),
+            )
+        )
 
 
 def test_inventory_rejects_same_host_different_user():
@@ -73,7 +81,8 @@ def test_inventory_rejects_same_host_different_user():
 
 def test_inventory_from_yaml(tmp_path):
     p = tmp_path / "hosts.yaml"
-    p.write_text(textwrap.dedent("""
+    p.write_text(
+        textwrap.dedent("""
         hosts:
           - host: 10.0.0.11
             user: ubuntu
@@ -82,7 +91,8 @@ def test_inventory_from_yaml(tmp_path):
             user: ubuntu
             slots: 4
             port: 2222
-    """))
+    """)
+    )
     inv = Inventory.from_yaml(str(p))
     assert [h.host for h in inv.hosts] == ["10.0.0.11", "10.0.0.12"]
     assert inv.hosts[1].slots == 4
@@ -92,9 +102,11 @@ def test_inventory_from_yaml(tmp_path):
 # FIX 2: non-dict hosts entry raises ModelValidationError
 def test_inventory_from_yaml_rejects_nondict_entry(tmp_path):
     p = tmp_path / "hosts.yaml"
-    p.write_text(textwrap.dedent("""
+    p.write_text(
+        textwrap.dedent("""
         hosts:
           - just-a-string
-    """))
+    """)
+    )
     with pytest.raises(ModelValidationError):
         Inventory.from_yaml(str(p))

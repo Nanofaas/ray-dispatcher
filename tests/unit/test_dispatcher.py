@@ -45,8 +45,14 @@ def _mock_backend(report=None):
     )
     b.status.return_value = JobStatus.SUCCEEDED
     b.resolve.side_effect = lambda h: JobResult(
-        id=h.job_id, batch_id=h.batch_id, status=JobStatus.SUCCEEDED,
-        returncode=0, duration_s=0.1, host="10.0.0.1", output_dir=None, attempts=(),
+        id=h.job_id,
+        batch_id=h.batch_id,
+        status=JobStatus.SUCCEEDED,
+        returncode=0,
+        duration_s=0.1,
+        host="10.0.0.1",
+        output_dir=None,
+        attempts=(),
     )
     return b
 
@@ -86,20 +92,28 @@ def test_setup_force_after_setup_raises():
 
 
 def test_require_all_hosts_raises_on_partial_failure():
-    b = _mock_backend(report=ProvisioningReport((
-        HostProvisioningResult("10.0.0.1", True, "src123", "env123"),
-        HostProvisioningResult("10.0.0.2", False, None, None),
-    )))
+    b = _mock_backend(
+        report=ProvisioningReport(
+            (
+                HostProvisioningResult("10.0.0.1", True, "src123", "env123"),
+                HostProvisioningResult("10.0.0.2", False, None, None),
+            )
+        )
+    )
     d = Dispatcher(_inv(), _proj(), backend=b, require_all_hosts=True)
     with pytest.raises(ProvisioningError):
         d.setup()
 
 
 def test_require_all_hosts_false_allows_partial():
-    b = _mock_backend(report=ProvisioningReport((
-        HostProvisioningResult("10.0.0.1", True, "src123", "env123"),
-        HostProvisioningResult("10.0.0.2", False, None, None),
-    )))
+    b = _mock_backend(
+        report=ProvisioningReport(
+            (
+                HostProvisioningResult("10.0.0.1", True, "src123", "env123"),
+                HostProvisioningResult("10.0.0.2", False, None, None),
+            )
+        )
+    )
     d = Dispatcher(_inv(), _proj(), backend=b, require_all_hosts=False)
     report = d.setup()
     assert report is not None
@@ -229,10 +243,12 @@ def test_as_completed_yields_in_completion_order(tmp_path):
     b = _mock_backend()
     # Make status return RUNNING first, then SUCCEEDED on second call per handle
     call_counts: dict[str, int] = {}
+
     def _status(h):
         call_counts.setdefault(h.token, 0)
         call_counts[h.token] += 1
         return JobStatus.RUNNING if call_counts[h.token] < 2 else JobStatus.SUCCEEDED
+
     b.status.side_effect = _status
 
     d = Dispatcher(_inv(), _proj(), backend=b, results_dir=str(tmp_path))
@@ -255,8 +271,14 @@ def test_run_returns_results_in_input_order(tmp_path):
 def test_run_raises_batch_failed_error(tmp_path):
     b = _mock_backend()
     b.resolve.side_effect = lambda h: JobResult(
-        id=h.job_id, batch_id=h.batch_id, status=JobStatus.FAILED,
-        returncode=1, duration_s=0.0, host=None, output_dir=None, attempts=(),
+        id=h.job_id,
+        batch_id=h.batch_id,
+        status=JobStatus.FAILED,
+        returncode=1,
+        duration_s=0.0,
+        host=None,
+        output_dir=None,
+        attempts=(),
     )
     d = Dispatcher(_inv(), _proj(), backend=b, raise_on_failure=True, results_dir=str(tmp_path))
     with pytest.raises(BatchFailedError) as exc:
@@ -268,10 +290,20 @@ def test_run_drains_all_before_raising(tmp_path):
     """raise_on_failure=True still drains all jobs before raising."""
     b = _mock_backend()
     resolved: list[str] = []
+
     def _resolve(h):
         resolved.append(h.job_id)
-        return JobResult(id=h.job_id, batch_id=h.batch_id, status=JobStatus.FAILED,
-                         returncode=1, duration_s=0.0, host=None, output_dir=None, attempts=())
+        return JobResult(
+            id=h.job_id,
+            batch_id=h.batch_id,
+            status=JobStatus.FAILED,
+            returncode=1,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+        )
+
     b.resolve.side_effect = _resolve
     d = Dispatcher(_inv(), _proj(), backend=b, raise_on_failure=True, results_dir=str(tmp_path))
     with pytest.raises(BatchFailedError):

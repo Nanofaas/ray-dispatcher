@@ -19,9 +19,7 @@ def test_acquire_is_one_remote_flocked_python_operation():
 
 
 def test_unexpected_remote_failure_is_not_treated_as_success():
-    t = FakeTransport(
-        lambda argv: CommandResult(17, "", "python failed", 0.0)
-    )
+    t = FakeTransport(lambda argv: CommandResult(17, "", "python failed", 0.0))
 
     with pytest.raises(TransportError, match="python failed"):
         SessionLock(t, "mine").acquire()

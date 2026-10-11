@@ -145,11 +145,16 @@ def _ssh_e_option(cfg: SshConfig) -> str:
     as Fabric. shlex.join keeps paths with spaces safe."""
     parts = [
         "ssh",
-        "-p", str(cfg.port),
-        "-o", f"UserKnownHostsFile={cfg.known_hosts_file}",
-        "-o", "StrictHostKeyChecking=yes",
-        "-o", "GlobalKnownHostsFile=/dev/null",
-        "-o", "BatchMode=yes",
+        "-p",
+        str(cfg.port),
+        "-o",
+        f"UserKnownHostsFile={cfg.known_hosts_file}",
+        "-o",
+        "StrictHostKeyChecking=yes",
+        "-o",
+        "GlobalKnownHostsFile=/dev/null",
+        "-o",
+        "BatchMode=yes",
     ]
     if cfg.identity_file:
         parts += ["-i", cfg.identity_file]

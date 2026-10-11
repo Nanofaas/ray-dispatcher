@@ -127,8 +127,9 @@ def main() -> None:
                 for cfg in config_files
             ]
 
-            print(f"\nDispatching {len(jobs)} jobs across {N_VMS} VMs "
-                  f"({SLOTS_PER_VM} slots each)...")
+            print(
+                f"\nDispatching {len(jobs)} jobs across {N_VMS} VMs ({SLOTS_PER_VM} slots each)..."
+            )
             t0 = time.monotonic()
 
             with Dispatcher(inventory, project, results_dir=results_dir) as d:

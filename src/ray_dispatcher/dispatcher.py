@@ -31,9 +31,9 @@ from .models import (
 
 _log = logging.getLogger(__name__)
 
-_TERMINAL = frozenset({
-    JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMED_OUT
-})
+_TERMINAL = frozenset(
+    {JobStatus.SUCCEEDED, JobStatus.FAILED, JobStatus.CANCELLED, JobStatus.TIMED_OUT}
+)
 
 
 class Dispatcher:
@@ -60,6 +60,7 @@ class Dispatcher:
             from .backends.ssh_ray import (
                 SshRayBackend,  # deferred: avoids `import ray` at module load
             )
+
             backend = SshRayBackend(
                 retry_policy=retry_policy,
                 results_dir=results_dir,

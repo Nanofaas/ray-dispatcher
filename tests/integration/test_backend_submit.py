@@ -23,9 +23,9 @@ def _project():
 
 
 def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})
 
 
@@ -74,6 +74,7 @@ def test_submit_and_resolve_succeeds(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_ok_transport, results_dir=str(tmp_path))
@@ -101,6 +102,7 @@ def test_submit_failed_command_returns_failed_not_ray_retry(tmp_path, monkeypatc
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 1, "duration_s": 0.05}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_fail_transport, results_dir=str(tmp_path))
@@ -132,6 +134,7 @@ def test_status_returns_running_then_succeeded(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_blocking_transport, results_dir=str(tmp_path))
@@ -158,9 +161,7 @@ def test_status_unknown_handle_raises(tmp_path, monkeypatch):
     from ray_dispatcher.models import JobHandle
 
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
-    backend = SshRayBackend(
-        transport_factory=lambda h: FakeTransport(), results_dir=str(tmp_path)
-    )
+    backend = SshRayBackend(transport_factory=lambda h: FakeTransport(), results_dir=str(tmp_path))
     with pytest.raises(DispatcherError, match="unknown job handle"):
         backend.status(JobHandle(batch_id="b", job_id="ghost", token="nope"))
 
@@ -180,6 +181,7 @@ def test_status_returns_cancelled_for_cancelled_task(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_blocking_transport, results_dir=str(tmp_path))
@@ -214,6 +216,7 @@ def test_cancel_running_job_writes_cancelled_result_json(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(transport_factory=_blocking_transport, results_dir=str(tmp_path))

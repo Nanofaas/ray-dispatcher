@@ -25,6 +25,7 @@ def _home_transport(host):
         if 'printf %s "$HOME"' in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -60,15 +61,14 @@ def _canned_outcome(host_name, session):
 def test_teardown_shuts_down_owned_runtime_and_releases_locks(monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     rec = _Recorder()
-    monkeypatch.setattr(ssh_ray, "provision",
-                        lambda *a, **k: _canned_outcome("10.0.0.1", rec))
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1", rec))
     backend = SshRayBackend(transport_factory=_home_transport)
     backend.setup(inv, _project())
     assert ray.is_initialized()
     backend.teardown()
-    assert not ray.is_initialized()         # owned runtime shut down (§10.5)
+    assert not ray.is_initialized()  # owned runtime shut down (§10.5)
     assert rec.calls == ["stop", "release"]  # release_all() ran: hb stopped, lock released (§10.4)
-    assert backend._outcome is None          # released outcome cannot be reused
+    assert backend._outcome is None  # released outcome cannot be reused
 
 
 def test_teardown_is_safe_without_setup():
@@ -82,18 +82,21 @@ def test_teardown_purge_removes_only_project_and_submitted_job_state():
     layout = RemoteLayout("/home/ubuntu", "dfaas")
     backend = SshRayBackend(transport_factory=lambda h: transport)
     backend._inv_hosts = {host.host: host}
-    backend._runtimes = {
-        host.host: HostRuntime(host.host, layout, "env", "runner", "/proj", {})
-    }
+    backend._runtimes = {host.host: HostRuntime(host.host, layout, "env", "runner", "/proj", {})}
     backend._submitted = {("batch", "job")}
 
     backend.teardown(purge=True)
 
     runs = [call[1] for call in transport.calls if call[0] == "run"]
-    assert runs == [(
-        "rm", "-rf", layout.project, layout.secrets,
-        f"{layout.root}/runs/dfaas/batch/job",
-    )]
+    assert runs == [
+        (
+            "rm",
+            "-rf",
+            layout.project,
+            layout.secrets,
+            f"{layout.root}/runs/dfaas/batch/job",
+        )
+    ]
 
 
 def test_purge_failure_still_releases_sessions():
@@ -107,9 +110,7 @@ def test_purge_failure_still_releases_sessions():
     backend = SshRayBackend(transport_factory=lambda h: transport)
     backend._outcome = outcome
     backend._inv_hosts = {host.host: host}
-    backend._runtimes = {
-        host.host: HostRuntime(host.host, layout, "env", "runner", "/proj", {})
-    }
+    backend._runtimes = {host.host: HostRuntime(host.host, layout, "env", "runner", "/proj", {})}
 
     with pytest.raises(DispatcherError, match="permission denied"):
         backend.teardown(purge=True)

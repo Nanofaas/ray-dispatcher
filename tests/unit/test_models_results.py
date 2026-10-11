@@ -15,13 +15,23 @@ from ray_dispatcher.models import (
 
 def test_job_status_values():
     assert {s.value for s in JobStatus} == {
-        "pending", "running", "succeeded", "failed", "timed_out", "cancelled",
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "cancelled",
     }
 
 
 def test_failure_kind_values():
     assert {k.value for k in FailureKind} == {
-        "command", "ssh", "timeout", "output_missing", "collection", "host_lost",
+        "command",
+        "ssh",
+        "timeout",
+        "output_missing",
+        "collection",
+        "host_lost",
         "internal",
     }
 
@@ -46,17 +56,30 @@ def test_job_handle_is_hashable():
 
 def test_result_objects_construct():
     attempt = AttemptResult(
-        number=1, host="h", status=JobStatus.SUCCEEDED, returncode=0,
-        duration_s=1.0, stdout_log="o", stderr_log="e",
+        number=1,
+        host="h",
+        status=JobStatus.SUCCEEDED,
+        returncode=0,
+        duration_s=1.0,
+        stdout_log="o",
+        stderr_log="e",
     )
     result = JobResult(
-        id="j", batch_id="b", status=JobStatus.SUCCEEDED, returncode=0,
-        duration_s=1.0, host="h", output_dir="./results/b/j/outputs",
+        id="j",
+        batch_id="b",
+        status=JobStatus.SUCCEEDED,
+        returncode=0,
+        duration_s=1.0,
+        host="h",
+        output_dir="./results/b/j/outputs",
         attempts=(attempt,),
     )
     assert result.attempts[0].failure_kind is None
     report = ProvisioningReport(
-        hosts=(HostProvisioningResult(host="h", succeeded=True,
-                                      source_digest="s", environment_digest="e"),)
+        hosts=(
+            HostProvisioningResult(
+                host="h", succeeded=True, source_digest="s", environment_digest="e"
+            ),
+        )
     )
     assert report.hosts[0].succeeded is True

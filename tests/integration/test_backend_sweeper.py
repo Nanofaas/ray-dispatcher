@@ -22,9 +22,9 @@ def _project():
 
 
 def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})
 
 
@@ -42,11 +42,14 @@ def test_expired_lease_is_swept_reconciled_and_host_readmitted(tmp_path, monkeyp
             if argv[:2] == ["kill", "-0"]:  # probe: group already gone
                 return CommandResult(1, "", "", 0.0)
             return CommandResult(0, "", "", 0.0)  # kill -TERM/-KILL etc.
+
         return FakeTransport(run_results=results)
 
     backend = SshRayBackend(
-        transport_factory=_transport, results_dir=str(tmp_path),
-        lease_ttl_s=0.5, sweep_interval_s=0.2,
+        transport_factory=_transport,
+        results_dir=str(tmp_path),
+        lease_ttl_s=0.5,
+        sweep_interval_s=0.2,
     )
     try:
         backend.setup(inv, _project())

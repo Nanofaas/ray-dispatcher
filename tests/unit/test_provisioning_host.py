@@ -38,7 +38,9 @@ def _prov(tmp_path, results, runner_path):
         FakeTransport(run_results=results),
         Project(path=str(tmp_path), project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path=runner_path, session_id="sess-1", heartbeat_interval_s=1000.0,
+        runner_path=runner_path,
+        session_id="sess-1",
+        heartbeat_interval_s=1000.0,
     )
 
 
@@ -77,8 +79,7 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     assert "release broken" in result.error
     # the lock was released after the failure
     assert any(
-        c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-3] == "release"
-        for c in p.t.calls
+        c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-3] == "release" for c in p.t.calls
     )
 
 
@@ -95,7 +96,8 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
         FakeTransport(run_results=held),
         Project(path=str(tmp_path), project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path=str(runner), session_id="sess-1",
+        runner_path=str(runner),
+        session_id="sess-1",
     )
     result, session = p.provision()
     assert result.succeeded is False and session is None
