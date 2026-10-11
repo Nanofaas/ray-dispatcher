@@ -1,0 +1,31 @@
+name: checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@v10.3.0
+      - run: uv sync --locked
+      - run: uv run --locked ruff check .
+      - run: uv run --locked ruff format --check .
+      - run: uv run --locked mypy src
+      - run: uv run --locked pytest -q
+      - if: matrix.python == '3.13'
+        run: |
+          uv sync --locked --group e2e
+          uv run --locked --group e2e python -c 'from multipass_vm_sdk import MultipassClient, MultipassVM, find_ssh_public_key'
+          uv run --locked --group e2e pytest tests/unit/test_vm_cleanup.py -q
+          uv run --locked --group e2e pytest -o addopts= --collect-only tests/e2e -q
+          uv sync --locked --project examples/toy_batch
+          uv run --locked --project examples/toy_batch pytest examples/toy_batch/tests -q

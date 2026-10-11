@@ -1,7 +1,5 @@
 import json
 
-import pytest
-
 from ray_dispatcher.models import AttemptResult, FailureKind, Job, JobStatus, RetryPolicy
 from ray_dispatcher.provisioning import RemoteLayout
 from ray_dispatcher.results import JobLayout
