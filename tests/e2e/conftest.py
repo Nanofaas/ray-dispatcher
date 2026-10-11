@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 import pytest
-from multipass import MultipassClient, MultipassVM, find_ssh_public_key
+from multipass_vm_sdk import MultipassClient, MultipassVM, find_ssh_public_key
 
 from ray_dispatcher.models import Inventory, Project, RemoteHost
 
@@ -48,6 +48,7 @@ def vm_fleet(tmp_path_factory: pytest.TempPathFactory):  # noqa: ARG001
     """Launch _N_VMS Multipass VMs. Yields list of (vm, ip). Deletes all in finally."""
     client = MultipassClient()
     launched: list[tuple[MultipassVM, str]] = []
+    created: list[MultipassVM] = []
     try:
         for i in range(_N_VMS):
             name = f"{_VM_PREFIX}-{i}"
@@ -59,12 +60,13 @@ def vm_fleet(tmp_path_factory: pytest.TempPathFactory):  # noqa: ARG001
                 disk="6G",
                 cloud_init_config=_cloud_init(),
             )
+            created.append(vm)
             ip = vm.wait_ready(timeout=180, port=22)
             vm.exec(["cloud-init", "status", "--wait"])
             launched.append((vm, ip))
         yield launched
     finally:
-        for vm, _ in launched:
+        for vm in created:
             try:
                 vm.delete(purge=True)
             except Exception:  # noqa: BLE001

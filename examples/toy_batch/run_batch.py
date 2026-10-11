@@ -12,7 +12,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from multipass import MultipassClient, MultipassVM, find_ssh_public_key
+from multipass_vm_sdk import MultipassClient, MultipassVM, find_ssh_public_key
 
 from ray_dispatcher import (
     Dispatcher,
@@ -67,6 +67,7 @@ def main() -> None:
 
     client = MultipassClient()
     launched: list[tuple[MultipassVM, str]] = []
+    created: list[MultipassVM] = []
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
@@ -85,6 +86,7 @@ def main() -> None:
                     disk="6G",
                     cloud_init_config=_cloud_init(),
                 )
+                created.append(vm)
                 ip = vm.wait_ready(timeout=180, port=22)
                 vm.exec(["cloud-init", "status", "--wait"])
                 launched.append((vm, ip))
@@ -153,7 +155,7 @@ def main() -> None:
         finally:
             if launched:
                 print("\nDestroying VMs...")
-            for vm, _ in launched:
+            for vm in created:
                 try:
                     vm.delete(purge=True)
                     print(f"  {vm.name}: deleted")

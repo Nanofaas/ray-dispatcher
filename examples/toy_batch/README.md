@@ -14,7 +14,7 @@ Dimostra il flusso completo di `ray-dispatcher`: provisioning remoto, dispatch p
 
 ```
 toy_batch/
-  pyproject.toml        # dipendenze: ray-dispatcher + multipass-sdk
+  pyproject.toml        # dipendenze: ray-dispatcher + multipass-vm-sdk
   run_batch.py          # driver: crea VM, dispatcha job, stampa risultati, distrugge VM
   experiment/           # progetto rsyncato sulle VM
     experiment.py       # stima π via Monte Carlo, scrive result.json

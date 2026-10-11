@@ -22,7 +22,7 @@ dev = [
   "types-pyyaml",
 ]
 e2e = [
-  "multipass-sdk @ git+https://github.com/miciav/multipass-sdk.git@83b3704 ; python_version >= '3.11'",
+  "multipass-vm-sdk==0.6.0 ; python_version >= '3.11'",
 ]
 
 [build-system]
@@ -36,7 +36,7 @@ packages = ["src/ray_dispatcher"]
 testpaths = ["tests"]
 addopts = "--ignore=tests/e2e"
 markers = [
-  "e2e: opt-in end-to-end tests using multipass-sdk (requires Multipass)",
+  "e2e: opt-in end-to-end tests using multipass-vm-sdk (requires Multipass)",
 ]
 
 [tool.ruff]

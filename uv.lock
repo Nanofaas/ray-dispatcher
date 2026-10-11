@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -804,12 +804,16 @@ wheels = [
 ]
 
 [[package]]
-name = "multipass-sdk"
-version = "0.5.0"
-source = { git = "https://github.com/miciav/multipass-sdk.git?rev=83b3704#83b3704b2c37e50c09773cd97073f691cd4d3faa" }
+name = "multipass-vm-sdk"
+version = "0.6.0"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "haikunator" },
     { name = "pyyaml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0f/a4/f1f7539c62ef55015b8ab1c1a043cce62f57ab023974156e9ced9d91d0bb/multipass_vm_sdk-0.6.0.tar.gz", hash = "sha256:9195fa1d9a9aabf4adfce89ce2e07fef264485dd104afe5c04a633e76397eabd", size = 67785, upload-time = "2026-09-20T13:40:43.829Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0f/7f/865c30de3878a8239d10e475102ea4d307f15060447f647053ac6b4392be/multipass_vm_sdk-0.6.0-py3-none-any.whl", hash = "sha256:0ba64a7ed4fccbcdef2456f27ca0d546a162d1017eb48d806c8c762e62664f34", size = 22696, upload-time = "2026-09-20T13:40:42.674Z" },
 ]
 
 [[package]]
@@ -1145,7 +1149,7 @@ dev = [
     { name = "types-pyyaml" },
 ]
 e2e = [
-    { name = "multipass-sdk", marker = "python_full_version >= '3.11'" },
+    { name = "multipass-vm-sdk", marker = "python_full_version >= '3.11'" },
 ]
 
 [package.metadata]
@@ -1165,7 +1169,7 @@ dev = [
     { name = "ruff", specifier = ">=0.5" },
     { name = "types-pyyaml" },
 ]
-e2e = [{ name = "multipass-sdk", marker = "python_full_version >= '3.11'", git = "https://github.com/miciav/multipass-sdk.git?rev=83b3704" }]
+e2e = [{ name = "multipass-vm-sdk", marker = "python_full_version >= '3.11'", specifier = "==0.6.0" }]
 
 [[package]]
 name = "referencing"
