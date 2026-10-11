@@ -37,7 +37,7 @@ from ..models import (
     RetryPolicy,
 )
 from ..provisioning import ProvisioningOutcome, RemoteLayout, _default_transport, provision
-from ..results import JobLayout, write_result_json
+from ..results import JobLayout, read_result_json, write_result_json
 from ..scheduling import (
     HostRuntime,
     Lease,
@@ -125,26 +125,22 @@ def _attempt_task(
             local=local,
             policy=policy,
         )
-        write_result_json(local.result_json, result)
-        return result
     # Ray delivers cancel to a running task as KeyboardInterrupt; TaskCancelledError
     # covers the pre-start window. Both terminate as a CANCELLED JobResult (§8.1).
     except (KeyboardInterrupt, ray.exceptions.TaskCancelledError):
-        cancelled = JobResult(
+        result = JobResult(
             id=job.id, batch_id=batch_id, status=JobStatus.CANCELLED,
             returncode=None, duration_s=0.0, host=None, output_dir=None,
             attempts=(), error="cancelled",
         )
-        write_result_json(local.result_json, cancelled)
-        return cancelled
     except Exception as exc:
-        internal = JobResult(
+        result = JobResult(
             id=job.id, batch_id=batch_id, status=JobStatus.FAILED,
             returncode=None, duration_s=0.0, host=None, output_dir=None,
             attempts=(), error=f"INTERNAL: {type(exc).__name__}: {exc}",
         )
-        write_result_json(local.result_json, internal)
-        return internal
+    write_result_json(local.result_json, result)
+    return result
 
 
 class SshRayBackend(ExecutionBackend):
@@ -377,7 +373,7 @@ class SshRayBackend(ExecutionBackend):
         try:
             result: JobResult = ray.get(ref)  # type: ignore[call-overload]
         except ray.exceptions.TaskCancelledError:
-            return JobStatus.CANCELLED
+            return self._cancelled_result(handle).status
         return result.status
 
     def cancel(self, handle: JobHandle) -> None:
@@ -391,11 +387,17 @@ class SshRayBackend(ExecutionBackend):
         try:
             return ray.get(ref)  # type: ignore[call-overload, no-any-return]
         except ray.exceptions.TaskCancelledError:
-            return JobResult(
-                id=handle.job_id, batch_id=handle.batch_id, status=JobStatus.CANCELLED,
-                returncode=None, duration_s=0.0, host=None, output_dir=None,
-                attempts=(), error="cancelled",
-            )
+            return self._cancelled_result(handle)
+
+    def _cancelled_result(self, handle: JobHandle) -> JobResult:
+        path = JobLayout(self._results_dir, handle.batch_id, handle.job_id).result_json
+        if path.exists():
+            return read_result_json(path)
+        result = JobResult(id=handle.job_id, batch_id=handle.batch_id, status=JobStatus.CANCELLED,
+                           returncode=None, duration_s=0, host=None, output_dir=None,
+                           attempts=(), error="cancelled")
+        write_result_json(path, result)
+        return result
 
     def running_hosts(self) -> dict[str, str]:
         self._fail_if_session_lost()

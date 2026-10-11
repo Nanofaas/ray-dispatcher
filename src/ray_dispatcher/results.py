@@ -8,11 +8,12 @@ writers; nothing in this module touches Ray.
 from __future__ import annotations
 
 import json
+import tempfile
 from dataclasses import asdict, dataclass
 from enum import Enum
 from pathlib import Path
 
-from .models import AttemptResult, JobResult, OutputSpec
+from .models import AttemptResult, FailureKind, JobResult, JobStatus, OutputSpec
 from .paths import ensure_within
 from .ssh import Transport, TransportError
 
@@ -73,7 +74,31 @@ def write_attempt_json(
 
 def write_result_json(path: Path, result: JobResult) -> None:
     """Write the job's result.json (spec §9.1), including its nested attempts."""
-    path.write_text(json.dumps(asdict(result), default=_enc, indent=2))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=".result-", delete=False) as fh:
+            temporary = Path(fh.name)
+            json.dump(asdict(result), fh, default=_enc, indent=2)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def read_result_json(path: Path) -> JobResult:
+    """Read a terminal result already persisted by the task."""
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    doc["status"] = JobStatus(doc["status"])
+    attempts = []
+    for item in doc["attempts"]:
+        item["status"] = JobStatus(item["status"])
+        if item["failure_kind"] is not None:
+            item["failure_kind"] = FailureKind(item["failure_kind"])
+        attempts.append(AttemptResult(**item))
+    doc["attempts"] = tuple(attempts)
+    return JobResult(**doc)
 
 
 @dataclass(frozen=True)

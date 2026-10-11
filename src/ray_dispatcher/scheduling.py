@@ -577,9 +577,16 @@ def run_job(
     tried: set[str] = set()
     while True:
         n = len(attempts) + 1
-        leased = lease.acquire(job.id, exclude=tried)
-        runtime = runtime_for(leased.host)
         try:
+            leased = lease.acquire(job.id, exclude=tried)
+        except NoHealthyHostsError as exc:
+            if not attempts:
+                raise
+            return replace(assemble_job_result(job.id, batch_id, attempts,
+                                               outputs_dir=str(local.outputs_dir)),
+                           status=JobStatus.FAILED, output_dir=None, error=str(exc))
+        try:
+            runtime = runtime_for(leased.host)
             # Register the attempt's pid file so the sweeper can reconcile the host
             # if this worker dies mid-attempt (§8.2). Inside the try so a raising
             # register_pid still releases the lease via the finally below.
@@ -602,10 +609,19 @@ def run_job(
                 result = _failed_attempt(
                     n, leased.host, FailureKind.INTERNAL, str(e.interrupted), local
                 )
+            elif isinstance(e.interrupted, KeyboardInterrupt):
+                result = replace(_failed_attempt(n, leased.host, FailureKind.INTERNAL,
+                                                  "cancelled", local),
+                                 status=JobStatus.CANCELLED, failure_kind=None)
+                write_attempt_json(local.attempt_json(n), result)
             elif e.interrupted is not None:
                 raise e.interrupted from e
             else:  # pragma: no cover - constructor invariant at call sites
                 raise RuntimeError("cleanup error missing outcome") from e
+        except KeyboardInterrupt:
+            result = replace(_failed_attempt(n, leased.host, FailureKind.INTERNAL, "cancelled", local),
+                             status=JobStatus.CANCELLED, failure_kind=None)
+            write_attempt_json(local.attempt_json(n), result)
         except TransportError as e:
             result = _failed_attempt(n, leased.host, FailureKind.SSH, str(e), local)
         except DispatcherError as e:

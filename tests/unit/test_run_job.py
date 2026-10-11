@@ -144,10 +144,41 @@ def test_unclean_cancel_quarantines_then_preserves_interrupt(monkeypatch, tmp_pa
         "ray_dispatcher.scheduling.execute_attempt",
         lambda *a, **k: (_ for _ in ()).throw(_HostCleanupError(interrupted=interrupt)),
     )
-    with pytest.raises(KeyboardInterrupt):
-        run_job(
+    result = run_job(
             Job(id="jobA", command=("sleep", "9")), batch_id="b1", lease=lease,
             runtime_for=_runtime, transport_for=lambda h: _ok_transport(),
             local=_layout(tmp_path), policy=RetryPolicy(),
         )
+    assert result.status is JobStatus.CANCELLED
     assert lease.quarantined == ["a"]
+
+
+def test_lost_capacity_preserves_completed_attempts(tmp_path):
+    from ray_dispatcher.errors import NoHealthyHostsError
+    class LostCapacity(FakeLease):
+        def acquire(self, attempt_id, *, exclude=()):
+            if self._n:
+                raise NoHealthyHostsError('all hosts lost')
+            return super().acquire(attempt_id, exclude=exclude)
+    result = run_job(Job('jobA', ('true',)), batch_id='b1', lease=LostCapacity(['a']),
+                     runtime_for=_runtime, transport_for=lambda _: _ssh_failing_transport(),
+                     local=_layout(tmp_path), policy=RetryPolicy())
+    assert result.status is JobStatus.FAILED
+    assert len(result.attempts) == 1
+    assert 'all hosts lost' in result.error
+
+
+def test_cancel_preserves_attempt_history(tmp_path, monkeypatch):
+    calls = []
+    def execute(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            raise TransportError('retry')
+        raise KeyboardInterrupt()
+    monkeypatch.setattr('ray_dispatcher.scheduling.execute_attempt', execute)
+    result = run_job(Job('jobA', ('true',)), batch_id='b1', lease=FakeLease(['a', 'b']),
+                     runtime_for=_runtime, transport_for=lambda _: _ok_transport(),
+                     local=_layout(tmp_path), policy=RetryPolicy())
+    assert result.status is JobStatus.CANCELLED
+    assert len(result.attempts) == 2
+    assert result.attempts[0].failure_kind is FailureKind.SSH
