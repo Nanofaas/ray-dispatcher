@@ -10,11 +10,13 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import threading
 import time
-from typing import IO, Any
+from io import BufferedIOBase
+from typing import IO, Any, cast
 
 
 def build_env(manifest: dict[str, Any]) -> dict[str, str]:
@@ -27,17 +29,17 @@ def build_env(manifest: dict[str, Any]) -> dict[str, str]:
     return env
 
 
-def _tee(stream: IO[bytes], raw_path: str, forward: IO[bytes]) -> None:
+def _tee(stream: IO[bytes], raw_path: str, forward: IO[bytes] | None) -> None:
     """Write child output raw to ``raw_path`` and forward the same bytes live.
     Forwarding is best-effort: if the forward stream breaks (e.g. the host SSH
     channel drops), keep draining the pipe to the file so the child never blocks
     and the exit status is still recorded (spec §7)."""
-    forwarding = True
+    forwarding = forward is not None
     with open(raw_path, "wb") as raw:
-        for chunk in iter(lambda: stream.read(4096), b""):
+        for chunk in iter(lambda: cast(BufferedIOBase, stream).read1(4096), b""):
             raw.write(chunk)
             raw.flush()
-            if forwarding:
+            if forwarding and forward is not None:
                 try:
                     forward.write(chunk)
                     forward.flush()
@@ -60,19 +62,29 @@ def run(manifest: dict[str, Any]) -> int:
     assert proc.stdout is not None and proc.stderr is not None
     with open(manifest["pid_path"], "w") as fh:
         json.dump({"pid": proc.pid, "pgid": os.getpgid(proc.pid)}, fh)
+    errors: list[BaseException] = []
+
+    def drain(stream: IO[bytes], path: str, forward: IO[bytes]) -> None:
+        try:
+            _tee(stream, path, forward if manifest.get("forward_output", True) else None)
+        except BaseException as exc:
+            errors.append(exc)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
     threads = [
-        threading.Thread(
-            target=_tee, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)
-        ),
-        threading.Thread(
-            target=_tee, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)
-        ),
+        threading.Thread(target=drain, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)),
+        threading.Thread(target=drain, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)),
     ]
     for t in threads:
         t.start()
     proc.wait()
     for t in threads:
         t.join()
+    if errors:
+        raise errors[0]
     ended = time.time()
     with open(manifest["result_path"], "w") as fh:
         json.dump(

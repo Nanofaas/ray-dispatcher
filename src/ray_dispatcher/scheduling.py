@@ -267,6 +267,7 @@ def build_runner_manifest(
     """
     return {
         "argv": list(job.command),
+        "forward_output": False,
         "cwd": posixpath.normpath(f"{run.run_root}/{job.cwd}"),
         "env": dict(job.env),
         "secret_env": dict(secret_env),
@@ -325,6 +326,47 @@ def _run_checked(
     return result
 
 
+def _invoke_runner(
+    transport: Transport, runner: str, run: RunPaths, *,
+    timeout_s: float | None, check_lease: Callable[[], None] | None = None,
+) -> bool:
+    """Supervise one invocation; return whether it timed out after confirmed cleanup."""
+    errors: list[BaseException] = []
+
+    def invoke() -> None:
+        try:
+            _run_checked(transport, ["python3", runner, run.manifest], "invoke runner", unbounded=True)
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=invoke, daemon=True)
+    deadline = None if timeout_s is None else time.monotonic() + timeout_s
+    try:
+        worker.start()
+        while worker.is_alive():
+            if check_lease is not None:
+                check_lease()
+            if deadline is not None and time.monotonic() >= deadline:
+                raise TimeoutError("job timed out")
+            worker.join(timeout=min(0.05, max(0, deadline - time.monotonic()))
+                        if deadline is not None else 0.05)
+        if errors:
+            raise errors[0]
+        if check_lease is not None:
+            check_lease()
+        return False
+    except BaseException as exc:
+        cleaned = _kill_remote_pgid(transport, run.pid)
+        if cleaned and worker.ident is not None:
+            worker.join(timeout=0.5)
+            cleaned = not worker.is_alive()
+        if not cleaned:
+            raise _HostCleanupError(interrupted=exc) from exc
+        if isinstance(exc, TimeoutError):
+            return True
+        raise
+
+
 def execute_attempt(
     transport: Transport,
     runtime: HostRuntime,
@@ -333,6 +375,7 @@ def execute_attempt(
     batch_id: str,
     attempt: int,
     local: JobLayout,
+    check_lease: Callable[[], None] | None = None,
 ) -> AttemptResult:
     """Run one job attempt on one provisioned host over SSH (spec §7 steps 2-9).
 
@@ -379,77 +422,32 @@ def execute_attempt(
     # §7.5 write the runner manifest (no shell assembled from user strings).
     manifest = build_runner_manifest(job, venv=venv, run=run, secret_env=runtime.secret_env)
     write_remote_file(transport, run.manifest, json.dumps(manifest))
-    # §7.6 invoke the versioned runner. Timeout enforcement §8.1:
-    # run in a daemon thread so we can terminate the remote process if timeout_s elapses.
-    # The try/except BaseException also covers cancellation (e.g. Ray's TaskCancelledError):
-    # any interrupt that escapes the invocation triggers a best-effort remote kill (§8.1).
+    cleanup_error = None
     try:
-        if job.timeout_s is not None:
-            _result: list[CommandResult] = []
-            _exc: list[BaseException] = []
-
-            def _invoke() -> None:
-                try:
-                    _result.append(
-                        _run_checked(
-                            transport,
-                            ["python3", runner, run.manifest],
-                            "invoke runner",
-                            unbounded=True,
-                        )
-                    )
-                except BaseException as e:
-                    _exc.append(e)
-
-            _t = threading.Thread(target=_invoke, daemon=True)
-            _t.start()
-            _t.join(timeout=job.timeout_s)
-
-            if _t.is_alive():
-                # Timed out — best-effort terminate the remote process group (§8.1).
-                cleaned = _kill_remote_pgid(transport, run.pid)
-                if cleaned:
-                    _t.join(timeout=0.5)
-                    cleaned = not _t.is_alive()
-                for remote, local_log in (
-                    (run.stdout, local.stdout_log(attempt)),
-                    (run.stderr, local.stderr_log(attempt)),
-                ):
-                    try:
-                        transport.pull(remote, str(local_log))
-                    except TransportError:
-                        pass  # logs may not exist if the runner never started
-                result = AttemptResult(
-                    number=attempt,
-                    host=runtime.host,
-                    status=JobStatus.TIMED_OUT,
-                    returncode=None,
-                    duration_s=float(job.timeout_s),
-                    stdout_log=str(local.stdout_log(attempt)),
-                    stderr_log=str(local.stderr_log(attempt)),
-                    failure_kind=FailureKind.TIMEOUT,
-                    error="job timed out",
-                )
-                write_attempt_json(local.attempt_json(attempt), result)
-                if not cleaned:
-                    raise _HostCleanupError(result=result)
-                return result
-
-            if _exc:
-                raise _exc[0]  # re-raise SSH/dispatcher exception from the thread
-        else:
-            _run_checked(
-                transport,
-                ["python3", runner, run.manifest],
-                "invoke runner",
-                unbounded=True,
-            )
-    except _HostCleanupError:
-        raise
-    except BaseException as exc:
-        if not _kill_remote_pgid(transport, run.pid):
-            raise _HostCleanupError(interrupted=exc) from exc
-        raise
+        timed_out = _invoke_runner(transport, runner, run, timeout_s=job.timeout_s,
+                                   check_lease=check_lease)
+    except _HostCleanupError as exc:
+        if not isinstance(exc.interrupted, TimeoutError):
+            raise
+        cleanup_error = exc
+        timed_out = True
+    if timed_out:
+        for remote, local_log in ((run.stdout, local.stdout_log(attempt)),
+                                  (run.stderr, local.stderr_log(attempt))):
+            try:
+                transport.pull(remote, str(local_log))
+            except TransportError:
+                pass
+        result = AttemptResult(
+            number=attempt, host=runtime.host, status=JobStatus.TIMED_OUT,
+            returncode=None, duration_s=float(job.timeout_s or 0),
+            stdout_log=str(local.stdout_log(attempt)), stderr_log=str(local.stderr_log(attempt)),
+            failure_kind=FailureKind.TIMEOUT, error="job timed out",
+        )
+        write_attempt_json(local.attempt_json(attempt), result)
+        if cleanup_error is not None:
+            raise _HostCleanupError(result=result) from cleanup_error
+        return result
     # parse the runner's result.json (returncode + monotonic duration, §7).
     info = json.loads(_run_checked(transport, ["cat", run.result], "read result").stdout)
     returncode = int(info["returncode"])

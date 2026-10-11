@@ -22,7 +22,7 @@ def test_manifest_keys_match_remote_runner():
     assert m["pid_path"] == run.pid
     assert m["result_path"] == run.result
     # exactly the keys remote_runner.py reads — no more, no less
-    assert set(m) == {"argv", "cwd", "env", "secret_env", "venv_bin",
+    assert set(m) == {"argv", "cwd", "env", "secret_env", "venv_bin", "forward_output",
                       "virtual_env", "stdout_path", "stderr_path", "pid_path", "result_path"}
 
 
@@ -31,3 +31,12 @@ def test_manifest_cwd_dot_is_run_root():
     job = Job(id="j", command=("echo", "hi"))  # cwd defaults to "."
     m = build_runner_manifest(job, venv="/v", run=run, secret_env={})
     assert m["cwd"] == "/r/1/run"
+
+
+def test_dispatcher_disables_child_forwarding():
+    from ray_dispatcher.models import Job
+    from ray_dispatcher.provisioning import RunPaths
+    from ray_dispatcher.scheduling import build_runner_manifest
+    manifest = build_runner_manifest(Job('j', ('true',)), venv='/venv',
+                                     run=RunPaths('/run'), secret_env={})
+    assert manifest['forward_output'] is False
