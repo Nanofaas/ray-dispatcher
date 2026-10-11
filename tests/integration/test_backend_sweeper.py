@@ -62,8 +62,9 @@ def test_expired_lease_is_swept_reconciled_and_host_readmitted(tmp_path, monkeyp
         # orphan reconciled -> host readmitted with its slot free.
         deadline = time.monotonic() + 10.0
         while time.monotonic() < deadline:
+            running = backend.running_hosts()
             quarantined = ray.get(actor.quarantined_hosts.remote())
-            if backend.running_hosts() == {} and quarantined == []:
+            if running == {} and quarantined == []:
                 break
             time.sleep(0.1)
         assert backend.running_hosts() == {}
