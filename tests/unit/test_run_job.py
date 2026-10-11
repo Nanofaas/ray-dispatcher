@@ -23,6 +23,9 @@ class FakeLease:
         self.excludes = []
         self.quarantined = []
 
+    def raise_if_lost(self):
+        pass
+
     def acquire(self, attempt_id, *, exclude=()):
         self.excludes.append(set(exclude))
         host = self._hosts[self._n]
@@ -182,3 +185,45 @@ def test_cancel_preserves_attempt_history(tmp_path, monkeypatch):
     assert result.status is JobStatus.CANCELLED
     assert len(result.attempts) == 2
     assert result.attempts[0].failure_kind is FailureKind.SSH
+
+
+def test_collection_policy_retries_download_failure(tmp_path):
+    class BrokenPull(FakeTransport):
+        def pull(self, *args, **kwargs):
+            raise TransportError('download failed')
+    transports = {'a': BrokenPull(run_results=_ok_transport()._run_results),
+                  'b': _ok_transport()}
+    result = run_job(Job('jobA', ('true',)), batch_id='b1', lease=FakeLease(['a', 'b']),
+                     runtime_for=_runtime, transport_for=transports.__getitem__,
+                     local=_layout(tmp_path), policy=RetryPolicy(2, frozenset({FailureKind.COLLECTION})))
+    assert result.status is JobStatus.SUCCEEDED
+    assert result.attempts[0].failure_kind is FailureKind.COLLECTION
+
+
+def test_command_failure_dominates_collection_failure(tmp_path):
+    class BrokenPull(FakeTransport):
+        def pull(self, *args, **kwargs):
+            raise TransportError('download failed')
+    transport = BrokenPull(run_results=_ok_transport(rc=7)._run_results)
+    result = run_job(Job('jobA', ('true',)), batch_id='b1', lease=FakeLease(['a']),
+                     runtime_for=_runtime, transport_for=lambda _: transport,
+                     local=_layout(tmp_path), policy=RetryPolicy(2, frozenset({FailureKind.COLLECTION})))
+    assert result.returncode == 7
+    assert result.attempts[0].failure_kind is FailureKind.COMMAND
+
+
+def test_host_loss_is_quarantined_before_retry(tmp_path):
+    from ray_dispatcher.scheduling import _LeaseLostError
+    class LostLease(FakeLease):
+        def raise_if_lost(self):
+            if self._n == 1:
+                raise _LeaseLostError('lease lost')
+        def acquire(self, attempt_id, *, exclude=()):
+            if self._n:
+                assert self.quarantined == ['a']
+            return super().acquire(attempt_id, exclude=exclude)
+    result = run_job(Job('jobA', ('true',)), batch_id='b1', lease=LostLease(['a', 'b']),
+                     runtime_for=_runtime, transport_for=lambda _: _ok_transport(),
+                     local=_layout(tmp_path), policy=RetryPolicy(2, frozenset({FailureKind.HOST_LOST})))
+    assert result.status is JobStatus.SUCCEEDED
+    assert result.attempts[0].failure_kind is FailureKind.HOST_LOST

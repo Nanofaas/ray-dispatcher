@@ -13,16 +13,8 @@ Three concerns live here, all Ray-free so Phase 6b can wrap them:
   classifies failures, prefers a fresh host on retry, and folds the attempts
   into a `JobResult` (§8.3, §4.4).
 
-Deferred to Phase 6b: the Ray task / actor decoration; the concurrent lease
-heartbeat (`execute_attempt` blocks for the whole job on one SSH call, so the
-6b wrapper must beat the lease while this driver is blocked, §7.1/§8.2); timeout
-+ process termination (§8.1, producing `TIMEOUT`); and the `HOST_LOST` /
-`COLLECTION` failure kinds (`retry_on` lists them, but they originate in the 6b
-heartbeat/collection machinery — `run_job` produces only `SSH`/`INTERNAL` from
-raised failures plus `COMMAND`/`OUTPUT_MISSING` from `execute_attempt`). The 6b
-Ray-task wrapper must also guarantee every job terminates as a `JobResult`,
-catching any stray exception `run_job` does not classify (e.g. a malformed
-remote `result.json`) as a final `INTERNAL` result.
+The Ray backend provides lease heartbeats; this module enforces process cleanup,
+classifies invocation/collection/lease failures, and preserves attempt history.
 """
 
 from __future__ import annotations
@@ -43,6 +35,7 @@ from .errors import DispatcherError, ModelValidationError, NoHealthyHostsError
 from .models import AttemptResult, FailureKind, Job, JobResult, JobStatus, Project, RetryPolicy
 from .provisioning import RemoteLayout, RunPaths
 from .results import (
+    CollectionResult,
     JobLayout,
     collect_outputs,
     create_attempt_dir,
@@ -287,6 +280,10 @@ def build_runner_manifest(
     }
 
 
+class _LeaseLostError(DispatcherError):
+    """The worker can no longer prove ownership of its host slot."""
+
+
 class _HostCleanupError(Exception):
     """Remote process cleanup was not confirmed; the host must be quarantined."""
 
@@ -459,17 +456,22 @@ def execute_attempt(
     info = json.loads(_run_checked(transport, ["cat", run.result], "read result").stdout)
     returncode = int(info["returncode"])
     duration_s = float(info["duration_s"])
-    # §7.7 pull streamed logs into the local attempt dir.
-    transport.pull(run.stdout, str(local.stdout_log(attempt)))
-    transport.pull(run.stderr, str(local.stderr_log(attempt)))
-    # §7.8 collect declared outputs into attempt-scoped staging.
     staging = attempt_dir / "outputs"
     staging.mkdir()
-    collected = collect_outputs(transport, run.run_root, job.outputs, staging)
+    collected = CollectionResult((), (), ())
+    collection_error = None
+    try:
+        transport.pull(run.stdout, str(local.stdout_log(attempt)))
+        transport.pull(run.stderr, str(local.stderr_log(attempt)))
+        collected = collect_outputs(transport, run.run_root, job.outputs, staging)
+    except TransportError as exc:
+        collection_error = str(exc)
     # classify: a command failure dominates; otherwise a missing required output
     # is OUTPUT_MISSING (§7.8 / §9.3).
     if returncode != 0:
         status, failure_kind = JobStatus.FAILED, FailureKind.COMMAND
+    elif collection_error is not None:
+        status, failure_kind = JobStatus.FAILED, FailureKind.COLLECTION
     elif collected.missing_required:
         status, failure_kind = JobStatus.FAILED, FailureKind.OUTPUT_MISSING
     else:
@@ -485,7 +487,7 @@ def execute_attempt(
         stdout_log=str(local.stdout_log(attempt)),
         stderr_log=str(local.stderr_log(attempt)),
         failure_kind=failure_kind,
-        error=None,
+        error=collection_error,
     )
     write_attempt_json(
         local.attempt_json(attempt), result, missing_optional=collected.missing_optional
@@ -540,6 +542,8 @@ class LeaseHandle(Protocol):
     def register_pid(self, token: str, pid_path: str) -> None: ...
 
     def quarantine(self, host: str) -> None: ...
+
+    def raise_if_lost(self) -> None: ...
 
 
 def _failed_attempt(
@@ -602,12 +606,15 @@ def run_job(
             )
             result = execute_attempt(
                 transport_for(leased.host), runtime, job,
-                batch_id=batch_id, attempt=n, local=local,
+                batch_id=batch_id, attempt=n, local=local, check_lease=lease.raise_if_lost,
             )
         except _HostCleanupError as e:
             lease.quarantine(leased.host)
             if e.result is not None:
                 result = e.result
+            elif isinstance(e.interrupted, _LeaseLostError):
+                result = _failed_attempt(n, leased.host, FailureKind.HOST_LOST,
+                                         str(e.interrupted), local)
             elif isinstance(e.interrupted, TransportError):
                 result = _failed_attempt(
                     n, leased.host, FailureKind.SSH, str(e.interrupted), local
@@ -625,6 +632,9 @@ def run_job(
                 raise e.interrupted from e
             else:  # pragma: no cover - constructor invariant at call sites
                 raise RuntimeError("cleanup error missing outcome") from e
+        except _LeaseLostError as e:
+            lease.quarantine(leased.host)
+            result = _failed_attempt(n, leased.host, FailureKind.HOST_LOST, str(e), local)
         except KeyboardInterrupt:
             result = replace(_failed_attempt(n, leased.host, FailureKind.INTERNAL, "cancelled", local),
                              status=JobStatus.CANCELLED, failure_kind=None)

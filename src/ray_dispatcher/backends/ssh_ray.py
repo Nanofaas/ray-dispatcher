@@ -24,6 +24,7 @@ from ..errors import (
     ModelValidationError,
     RayRuntimeConflictError,
     SessionLockLostError,
+    NoHealthyHostsError,
 )
 from ..models import (
     HostProvisioningResult,
@@ -41,6 +42,7 @@ from ..provisioning import ProvisioningOutcome, RemoteLayout, _default_transport
 from ..results import JobLayout, read_result_json, write_result_json
 from ..scheduling import (
     HostRuntime,
+    _LeaseLostError,
     Lease,
     LeaseService,
     reconcile_host,
@@ -69,10 +71,15 @@ class _ActorLeaseHandle:
         self._actor = actor
         self._heartbeat_interval_s = heartbeat_interval_s
         self._stop = threading.Event()
+        self._lost = threading.Event()
         self._hb_thread: threading.Thread | None = None
 
     def acquire(self, attempt_id: str, *, exclude: Iterable[str] = ()) -> Lease:
-        lease = ray.get(self._actor.acquire.remote(attempt_id, exclude=tuple(exclude)))
+        try:
+            lease = ray.get(self._actor.acquire.remote(attempt_id, exclude=tuple(exclude)))
+        except ray.exceptions.RayError as exc:
+            raise NoHealthyHostsError(f"lease actor unavailable: {exc}") from exc
+        self._lost.clear()
         self._stop.clear()
         self._hb_thread = threading.Thread(
             target=self._heartbeat, args=(lease.token,), daemon=True, name="lease-heartbeat"
@@ -85,21 +92,35 @@ class _ActorLeaseHandle:
         if self._hb_thread is not None:
             self._hb_thread.join(timeout=self._heartbeat_interval_s + 1.0)
             self._hb_thread = None
-        ray.get(self._actor.release.remote(token))
+        try:
+            ray.get(self._actor.release.remote(token), timeout=5.0)
+        except ray.exceptions.RayError:
+            self._lost.set()
+            _log.warning("lease release failed; host remains unconfirmed", exc_info=True)
 
     def register_pid(self, token: str, pid_path: str) -> None:
         ray.get(self._actor.register_pid.remote(token, pid_path))
 
     def quarantine(self, host: str) -> None:
-        ray.get(self._actor.quarantine.remote(host))
+        try:
+            ray.get(self._actor.quarantine.remote(host), timeout=5.0)
+        except ray.exceptions.RayError:
+            self._lost.set()
+            _log.warning("lease quarantine failed; actor unavailable", exc_info=True)
+
+    def raise_if_lost(self) -> None:
+        if self._lost.is_set():
+            raise _LeaseLostError("lease lost: heartbeat rejected or actor unavailable")
 
     def _heartbeat(self, token: str) -> None:
         while not self._stop.wait(self._heartbeat_interval_s):
             try:
-                alive = ray.get(self._actor.heartbeat.remote(token))
+                alive = ray.get(self._actor.heartbeat.remote(token), timeout=self._heartbeat_interval_s)
             except Exception:
+                self._lost.set()
                 break
             if not alive:
+                self._lost.set()
                 break
 
 

@@ -13,6 +13,9 @@ class _RecordingLease:
     def __init__(self):
         self.registered: list[tuple[str, str]] = []
 
+    def raise_if_lost(self):
+        pass
+
     def acquire(self, attempt_id, *, exclude=()):
         return Lease(token="t1", host="h1", slot=0, attempt_id=attempt_id,
                      expiry_s=60.0, heartbeat_s=0.0)
