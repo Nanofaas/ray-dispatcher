@@ -52,9 +52,9 @@ def test_expired_lease_is_swept_reconciled_and_host_readmitted(tmp_path, monkeyp
         backend.setup(inv, _project())
         actor = backend._actor
         # Simulate a worker that died mid-attempt: acquire + register, never heartbeat.
-        lease = ray.get(actor.acquire.remote("job-dead"))
+        lease = ray.get(actor.acquire.remote("batch/job-dead"))
         ray.get(actor.register_pid.remote(lease.token, "/runs/b/j/1/pid.json"))
-        assert backend.running_hosts() == {"job-dead": "10.0.0.1"}
+        assert backend.running_hosts() == {("batch", "job-dead"): "10.0.0.1"}
         # Within a few sweep cycles: lease expired -> host quarantined ->
         # orphan reconciled -> host readmitted with its slot free.
         deadline = time.monotonic() + 10.0
@@ -66,7 +66,7 @@ def test_expired_lease_is_swept_reconciled_and_host_readmitted(tmp_path, monkeyp
         assert backend.running_hosts() == {}
         assert ray.get(actor.quarantined_hosts.remote()) == []
         # capacity is actually back: a fresh acquire succeeds immediately
-        again = ray.get(actor.acquire.remote("job-next"))
+        again = ray.get(actor.acquire.remote("batch/job-next"))
         assert again.host == "10.0.0.1"
         ray.get(actor.release.remote(again.token))
     finally:

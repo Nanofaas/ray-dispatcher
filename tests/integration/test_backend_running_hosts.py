@@ -53,7 +53,7 @@ def test_running_hosts_reports_host_while_job_in_flight(tmp_path, monkeypatch):
         backend.setup(inv, _project())
         handle = backend.submit("batch1", Job(id="j1", command=("echo", "hi")))
         time.sleep(1.0)  # let the Ray task acquire its lease and reach the slow step
-        assert backend.running_hosts() == {"j1": "10.0.0.1"}
+        assert backend.running_hosts() == {("batch1", "j1"): "10.0.0.1"}
         result = backend.resolve(handle)
         assert result.status == JobStatus.SUCCEEDED
         assert backend.running_hosts() == {}  # lease released once the attempt finished

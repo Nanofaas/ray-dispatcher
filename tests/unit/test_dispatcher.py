@@ -219,9 +219,9 @@ def test_cancel_delegates_to_backend():
 
 def test_running_hosts_delegates_to_backend():
     b = _mock_backend()
-    b.running_hosts.return_value = {"j1": "10.0.0.1"}
+    b.running_hosts.return_value = {("b1", "j1"): "10.0.0.1"}
     d = Dispatcher(_inv(), _proj(), backend=b)
-    assert d.running_hosts() == {"j1": "10.0.0.1"}
+    assert d.running_hosts() == {("b1", "j1"): "10.0.0.1"}
     b.running_hosts.assert_called_once()
 
 

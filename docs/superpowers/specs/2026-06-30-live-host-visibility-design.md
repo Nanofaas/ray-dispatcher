@@ -88,3 +88,13 @@ of job count, and the consumer does the `dict.get(job_id)` locally.
 - No host info for `PENDING` jobs (no lease yet — there is nothing to
   report).
 - No historical/queue-position data — this is a live snapshot only.
+
+## Emendamento 2026-10-11
+
+`Dispatcher.running_hosts()` e il contratto backend restituiscono ora
+`dict[tuple[str, str], str]`, con chiavi `(batch_id, job_id)`.
+Le lease mantengono un attempt_id opaco `batch_id/job_id`; solo il backend
+lo converte nella chiave pubblica. Il consumer passa da `hosts.get(job_id)`
+a `hosts.get((handle.batch_id, handle.job_id))`, così job omonimi in batch
+diversi non si sovrascrivono. Questo emendamento sostituisce il contratto
+`{job_id: host}` descritto sopra.

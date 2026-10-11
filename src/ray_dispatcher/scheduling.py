@@ -589,7 +589,7 @@ def run_job(
     while True:
         n = len(attempts) + 1
         try:
-            leased = lease.acquire(job.id, exclude=tried)
+            leased = lease.acquire(f"{batch_id}/{job.id}", exclude=tried)
         except NoHealthyHostsError as exc:
             if not attempts:
                 raise

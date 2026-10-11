@@ -124,7 +124,7 @@ class Dispatcher:
     def cancel(self, handle: JobHandle) -> None:
         self._backend.cancel(handle)
 
-    def running_hosts(self) -> dict[str, str]:
+    def running_hosts(self) -> dict[tuple[str, str], str]:
         return self._backend.running_hosts()
 
     def as_completed(self, handles: Sequence[JobHandle]) -> Iterator[JobResult]:

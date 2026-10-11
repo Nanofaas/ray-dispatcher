@@ -440,11 +440,16 @@ class SshRayBackend(ExecutionBackend):
         write_result_json(path, result)
         return result
 
-    def running_hosts(self) -> dict[str, str]:
+    def running_hosts(self) -> dict[tuple[str, str], str]:
         self._fail_if_session_lost()
         if self._actor is None:
             return {}
-        return cast(dict[str, str], ray.get(self._actor.current_hosts.remote()))
+        snapshot = cast(dict[str, str], ray.get(self._actor.current_hosts.remote()))
+        result = {}
+        for attempt_id, host in snapshot.items():
+            batch_id, job_id = attempt_id.split("/", 1)
+            result[batch_id, job_id] = host
+        return result
 
     def _purge_remote_state(self) -> list[str]:
         errors: list[str] = []
