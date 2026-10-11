@@ -251,7 +251,7 @@ class SshTransport:
 
     def _rsync(self, argv: list[str]) -> None:
         try:
-            subprocess.run(
+            subprocess.run(  # noqa: S603 — argv constructed by build_rsync_argv
                 argv,
                 check=True,
                 capture_output=True,

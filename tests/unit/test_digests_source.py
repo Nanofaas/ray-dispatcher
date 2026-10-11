@@ -37,7 +37,7 @@ def test_content_change_changes_digest(tmp_path):
 def test_mode_change_changes_digest(tmp_path):
     _tree(tmp_path)
     before = source_digest(str(tmp_path), excludes=(".venv/",))
-    os.chmod(tmp_path / "run.py", 0o755)
+    os.chmod(tmp_path / "run.py", 0o755)  # noqa: S103 — exercise executable-bit changes
     assert source_digest(str(tmp_path), excludes=(".venv/",)) != before
 
 

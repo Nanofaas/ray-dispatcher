@@ -8,3 +8,6 @@ dist/
 .coverage
 results/
 .worktrees/
+
+coverage.xml
+htmlcov/

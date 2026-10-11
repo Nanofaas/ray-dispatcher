@@ -51,7 +51,7 @@ def run(manifest: dict[str, Any]) -> int:
     env = build_env(manifest)
     started = time.time()
     started_mono = time.monotonic()
-    proc = subprocess.Popen(
+    proc = subprocess.Popen(  # noqa: S603 — executing the explicitly supplied job argv
         manifest["argv"],
         cwd=manifest["cwd"],
         env=env,
@@ -59,7 +59,7 @@ def run(manifest: dict[str, Any]) -> int:
         stderr=subprocess.PIPE,
         start_new_session=True,
     )
-    assert proc.stdout is not None and proc.stderr is not None
+    assert proc.stdout is not None and proc.stderr is not None  # noqa: S101 — internal invariant, not input validation
     with open(manifest["pid_path"], "w") as fh:
         json.dump({"pid": proc.pid, "pgid": os.getpgid(proc.pid)}, fh)
     errors: list[BaseException] = []

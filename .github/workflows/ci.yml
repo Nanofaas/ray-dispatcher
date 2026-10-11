@@ -1,5 +1,10 @@
 name: checks
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 6 * * 1'
 permissions:
   contents: read
 jobs:
@@ -16,11 +21,17 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: '0.12.24'
       - run: uv sync --locked
       - run: uv run --locked ruff check .
       - run: uv run --locked ruff format --check .
       - run: uv run --locked mypy src
-      - run: uv run --locked pytest -q
+      - run: uv run --locked deptry src
+      - run: uv run --locked pytest tests/unit -q --cov --cov-report=term-missing --cov-report=xml
+      - run: uv run --locked pytest tests/integration -q
+      - run: uv audit --locked --python-version '${{ matrix.python }}' --python-platform linux
+      - run: uv audit --locked --project examples/toy_batch --python-version 3.13 --python-platform linux
       - if: matrix.python == '3.13'
         run: |
           uv sync --locked --group e2e
@@ -29,3 +40,23 @@ jobs:
           uv run --locked --group e2e pytest -o addopts= --collect-only tests/e2e -q
           uv sync --locked --project examples/toy_batch
           uv run --locked --project examples/toy_batch pytest examples/toy_batch/tests -q
+  distribution:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-python@v7.0.0
+        with:
+          python-version: '3.13'
+      - uses: astral-sh/setup-uv@v10.3.0
+        with:
+          version: '0.12.24'
+      - run: uv sync --locked
+      - run: uv build
+      - run: uv run --locked twine check --strict dist/*
+      - name: Install and import the wheel outside the checkout
+        run: |
+          uv venv /tmp/rd-wheel
+          uv pip install --python /tmp/rd-wheel/bin/python dist/*.whl
+          cd /tmp
+          /tmp/rd-wheel/bin/python -c 'from ray_dispatcher import Dispatcher, Job; from importlib.metadata import version; assert version("ray-dispatcher") == "0.1.1"'

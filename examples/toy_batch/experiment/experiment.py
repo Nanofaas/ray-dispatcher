@@ -10,7 +10,7 @@ n = cfg.get("n_samples", 100_000)
 seed = cfg.get("seed", 0)
 label = cfg.get("label", "run")
 
-rng = random.Random(seed)
+rng = random.Random(seed)  # noqa: S311 — reproducible Monte Carlo sampling
 inside = sum(1 for _ in range(n) if rng.random() ** 2 + rng.random() ** 2 <= 1.0)
 pi_est = 4 * inside / n
 

@@ -1,5 +1,6 @@
 """Session-scoped fixtures for Multipass e2e tests."""
 
+import logging
 import subprocess
 import time
 from pathlib import Path
@@ -70,7 +71,7 @@ def vm_fleet(tmp_path_factory: pytest.TempPathFactory):  # noqa: ARG001
             try:
                 vm.delete(purge=True)
             except Exception:  # noqa: BLE001
-                pass
+                logging.getLogger(__name__).exception("failed to delete test VM %s", vm.name)
 
 
 @pytest.fixture(scope="session")

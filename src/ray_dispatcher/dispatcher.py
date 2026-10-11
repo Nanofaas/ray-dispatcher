@@ -115,7 +115,7 @@ class Dispatcher:
                 try:
                     self._backend.cancel(handle)
                 except BaseException:  # noqa: BLE001
-                    pass
+                    _log.exception("failed to cancel job after submission error")
             raise
         return handles
 
@@ -162,7 +162,7 @@ class Dispatcher:
             try:
                 self._backend.cancel(h)
             except Exception:  # noqa: BLE001
-                pass
+                _log.exception("failed to request job cancellation during teardown")
         self._backend.teardown(purge=purge)
         self._outstanding.clear()
         self._setup_done = False

@@ -387,7 +387,7 @@ class SshRayBackend(ExecutionBackend):
         home = transport.run(["sh", "-c", 'printf %s "$HOME"']).stdout.strip()
         layout = RemoteLayout(home, project.project_id)
         env_dig = result.environment_digest
-        assert env_dig is not None  # healthy hosts always have an environment digest
+        assert env_dig is not None  # noqa: S101 — internal invariant, not input validation
         return HostRuntime(
             host=host_name,
             layout=layout,

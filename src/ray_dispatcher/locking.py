@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 
 from .errors import HostInUseError, SessionLockLostError
 from .ssh import Transport, TransportError
+
+_log = logging.getLogger(__name__)
 
 _CONFLICT = 3
 _LOST = 4
@@ -139,11 +142,11 @@ class HeartbeatThread(threading.Thread):
                     callback(exc)
                 return
             except Exception:  # noqa: BLE001 — heartbeat is best-effort; TTL is the net
-                pass
+                _log.warning("session heartbeat failed; relying on TTL", exc_info=True)
 
     def raise_if_failed(self) -> None:
         if self._failed.is_set():
-            assert self._failure is not None
+            assert self._failure is not None  # noqa: S101 — internal invariant, not input validation
             raise self._failure
 
     def set_failure_callback(self, callback: Callable[[SessionLockLostError], None]) -> None:

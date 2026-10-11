@@ -35,13 +35,19 @@ def test_running_hosts_reports_host_while_job_in_flight(tmp_path, monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
 
+    started = tmp_path / "started"
+    finish = tmp_path / "finish"
+
     # ponytail: inline closure so cloudpickle serializes it without a module reference
     def _slow_transport(host: RemoteHost) -> FakeTransport:
         def results(argv: list[str]) -> CommandResult:
             if 'printf %s "$HOME"' in " ".join(argv):
                 return CommandResult(0, "/home/ubuntu", "", 0.0)
             if argv[0] == "python3":
-                time.sleep(2.0)  # hold the lease long enough to observe it live
+                started.touch()
+                deadline = time.monotonic() + 30
+                while not finish.exists() and time.monotonic() < deadline:
+                    time.sleep(0.05)
                 return CommandResult(0, "", "", 0.0)
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
@@ -53,10 +59,15 @@ def test_running_hosts_reports_host_while_job_in_flight(tmp_path, monkeypatch):
     try:
         backend.setup(inv, _project())
         handle = backend.submit("batch1", Job(id="j1", command=("echo", "hi")))
-        time.sleep(1.0)  # let the Ray task acquire its lease and reach the slow step
+        deadline = time.monotonic() + 30
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert started.exists(), "runner did not start"
         assert backend.running_hosts() == {("batch1", "j1"): "10.0.0.1"}
+        finish.touch()
         result = backend.resolve(handle)
         assert result.status == JobStatus.SUCCEEDED
         assert backend.running_hosts() == {}  # lease released once the attempt finished
     finally:
+        finish.touch()
         backend.teardown()
