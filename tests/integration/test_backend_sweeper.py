@@ -68,5 +68,6 @@ def test_expired_lease_is_swept_reconciled_and_host_readmitted(tmp_path, monkeyp
         # capacity is actually back: a fresh acquire succeeds immediately
         again = ray.get(actor.acquire.remote("job-next"))
         assert again.host == "10.0.0.1"
+        ray.get(actor.release.remote(again.token))
     finally:
         backend.teardown()

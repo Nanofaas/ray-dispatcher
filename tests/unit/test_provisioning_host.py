@@ -63,7 +63,7 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     def failing(argv):
         if argv[:2] == ["command", "-v"]:
             return CommandResult(1, "", "missing", 0.0)  # preflight fails
-        if argv[:2] == ["python3", "-c"] and argv[-4] == "release":
+        if argv[:2] == ["python3", "-c"] and argv[-3] == "release":
             return CommandResult(17, "", "release broken", 0.0)
         if "$HOME" in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
@@ -77,7 +77,7 @@ def test_provision_step_failure_releases_lock_and_marks_failed(tmp_path):
     assert "release broken" in result.error
     # the lock was released after the failure
     assert any(
-        c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-4] == "release"
+        c[0] == "run" and c[1][:2] == ("python3", "-c") and c[1][-3] == "release"
         for c in p.t.calls
     )
 
@@ -87,7 +87,7 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
     runner.write_text("print('r')")
 
     def held(argv):
-        if argv[:2] == ["python3", "-c"] and argv[-4] == "acquire":
+        if argv[:2] == ["python3", "-c"] and argv[-3] == "acquire":
             return CommandResult(3, "other\n", "", 0.0)
         return CommandResult(0, "", "", 0.0)
 

@@ -11,6 +11,7 @@ import logging
 import math
 import secrets
 import threading
+import time
 import uuid
 from collections.abc import Callable, Iterable
 from typing import cast
@@ -50,6 +51,7 @@ from ..ssh import Transport
 from .base import ExecutionBackend
 
 _log = logging.getLogger(__name__)
+_DRAIN_TIMEOUT_S = 30.0
 
 # The async lease state machine, run as a Ray actor that holds no host CPU (§3.2.3).
 HostLease = ray.remote(num_cpus=0)(LeaseService)
@@ -191,6 +193,8 @@ class SshRayBackend(ExecutionBackend):
         self._inv_hosts: dict[str, RemoteHost] = {}
         self._refs: dict[str, object] = {}
         self._submitted: set[tuple[str, str]] = set()
+        self._cancel_requested: set[str] = set()
+        self._draining = False
         self._session_loss: SessionLockLostError | None = None
         self._session_loss_lock = threading.Lock()
 
@@ -227,6 +231,7 @@ class SshRayBackend(ExecutionBackend):
                 "a Ray runtime is already initialized; ray_dispatcher owns its own "
                 "local runtime and will not attach to an external one (§3.2)"
             )
+        self._draining = False
         with self._session_loss_lock:
             self._session_loss = None
         # Provision first; provision() raises NoHealthyHostsError if none succeed,
@@ -303,24 +308,36 @@ class SshRayBackend(ExecutionBackend):
                 # transient actor/SSH hiccup: try again next tick
                 _log.warning("lease sweep failed; retrying next tick", exc_info=True)
 
-    def _sweep_once(self) -> None:
+    def _sweep_once(self, *, deadline_s: float | None = None) -> None:
         """Expire dead leases, reconcile quarantined hosts, readmit clean ones (§8.2)."""
         actor = self._actor
         if actor is None:
             return
-        ray.get(actor.sweep.remote())
-        for host in ray.get(actor.quarantined_hosts.remote()):
-            pid_paths = ray.get(actor.orphan_paths.remote(host))
+        def get(ref: object) -> object:
+            if deadline_s is None:
+                return ray.get(ref)  # type: ignore[call-overload]
+            remaining = deadline_s - time.monotonic()
+            if remaining <= 0:
+                raise DispatcherError("cleanup deadline expired")
+            return ray.get(ref, timeout=remaining)  # type: ignore[call-overload]
+
+        get(actor.sweep.remote())
+        for host in cast(list[str], get(actor.quarantined_hosts.remote())):
+            pid_paths = cast(list[str], get(actor.orphan_paths.remote(host)))
             transport = self._transport_factory(self._inv_hosts[host])
             try:
-                clean = all(reconcile_host(transport, p) for p in pid_paths)
+                clean = bool(pid_paths) and all(
+                    reconcile_host(transport, p, deadline_s=deadline_s)
+                    if deadline_s is not None else reconcile_host(transport, p)
+                    for p in pid_paths
+                )
             except Exception:  # noqa: BLE001 — unreachable host stays quarantined
                 clean = False
                 _log.warning(
                     "reconcile of host %s failed; host stays quarantined", host, exc_info=True
                 )
             if clean:
-                ray.get(actor.mark_reconciled.remote(host))
+                get(actor.mark_reconciled.remote(host))
 
     def _build_runtime(
         self, project: Project, result: HostProvisioningResult, host: RemoteHost, runner_dig: str
@@ -342,6 +359,8 @@ class SshRayBackend(ExecutionBackend):
 
     def submit(self, batch_id: str, job: Job) -> JobHandle:
         self._fail_if_session_lost()
+        if self._draining:
+            raise DispatcherError("backend is draining; new submissions are rejected")
         token = uuid.uuid4().hex
         local = JobLayout(self._results_dir, batch_id, job.id)
         ref = _attempt_task.remote(
@@ -378,8 +397,9 @@ class SshRayBackend(ExecutionBackend):
 
     def cancel(self, handle: JobHandle) -> None:
         ref = self._refs.get(handle.token)
-        if ref is not None:
+        if ref is not None and handle.token not in self._cancel_requested:
             ray.cancel(ref)
+            self._cancel_requested.add(handle.token)
 
     def resolve(self, handle: JobHandle) -> JobResult:
         self._fail_if_session_lost()
@@ -423,8 +443,44 @@ class SshRayBackend(ExecutionBackend):
                 errors.append(f"{host_name}: {exc}")
         return errors
 
+    def _drain_jobs(self) -> None:
+        """Keep lease metadata alive until workers finish and orphans are reconciled."""
+        deadline = time.monotonic() + _DRAIN_TIMEOUT_S
+        pending = list(self._refs.values())
+        for token, ref in list(self._refs.items()):
+            if token not in self._cancel_requested:
+                ray.cancel(ref)
+                self._cancel_requested.add(token)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DispatcherError("remote cleanup not confirmed; session locks retained")
+            if pending:
+                _, pending = ray.wait(pending, num_returns=len(pending), timeout=min(0.05, remaining))
+            actor = self._actor
+            if actor is None:
+                if pending:
+                    raise DispatcherError("cannot drain jobs without lease actor")
+                return
+            self._sweep_once(deadline_s=deadline)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                continue
+            active = ray.get(actor.current_hosts.remote(), timeout=remaining)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                continue
+            quarantined = ray.get(actor.quarantined_hosts.remote(), timeout=remaining)
+            if not pending and not active and not quarantined:
+                return
+            time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+
     def teardown(self, *, purge: bool = False) -> None:
         purge_errors: list[str] = []
+        self._draining = True
+        self._drain_jobs()
+        if purge:
+            self._fail_if_session_lost()
         self._sweep_stop.set()
         if self._sweeper is not None:
             self._sweeper.join(timeout=self._sweep_interval_s + 5.0)
@@ -466,6 +522,7 @@ class SshRayBackend(ExecutionBackend):
             self._inv_hosts = {}
             self._refs = {}
             self._submitted = set()
+            self._cancel_requested.clear()
         if cleanup_error is not None:
             raise cleanup_error
         if purge_errors:

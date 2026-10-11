@@ -162,8 +162,8 @@ class Dispatcher:
                 self._backend.cancel(h)
             except Exception:  # noqa: BLE001
                 pass
-        self._outstanding.clear()
         self._backend.teardown(purge=purge)
+        self._outstanding.clear()
         self._setup_done = False
         self._setup_report = None
 

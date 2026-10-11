@@ -207,20 +207,27 @@ def _parse_pgid(stdout: str) -> int | None:
     return pgid if pgid > 1 else None
 
 
-def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0) -> bool:
+def reconcile_host(transport: Transport, pid_file: str, *, grace_s: float = 10.0,
+                   deadline_s: float | None = None) -> bool:
     """Terminate any orphaned process group recorded for a lost attempt (spec §8.2/§8.1).
 
     Returns True when the host is confirmed clean: no pid file recorded, or the
     recorded process group is gone after SIGTERM/SIGKILL. Returns False when a pid
     file exists but cannot be parsed — the host stays quarantined for manual recovery.
     """
-    result = transport.run(["cat", pid_file])
+    if deadline_s is not None:
+        remaining = deadline_s - time.monotonic()
+        if remaining <= 0:
+            return False
+        result = transport.run(["cat", pid_file], timeout_s=remaining)
+    else:
+        result = transport.run(["cat", pid_file])
     if result.returncode != 0:
         return False  # runner may still be starting; absence does not prove the host clean
     pgid = _parse_pgid(result.stdout)
     if pgid is None:
         return False  # recorded but unreadable -> cannot confirm clean
-    return terminate_process_group(transport, pgid, grace_s=grace_s)
+    return terminate_process_group(transport, pgid, grace_s=grace_s, deadline_s=deadline_s)
 
 
 # --- attempt driver (§7.2-7.9) -------------------------------------------------

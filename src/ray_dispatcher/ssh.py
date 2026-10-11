@@ -271,21 +271,34 @@ def terminate_process_group(
     poll_s: float = 0.5,
     now: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    deadline_s: float | None = None,
 ) -> bool:
     """SIGTERM the remote process group, wait up to grace_s, then SIGKILL.
     Returns True once a probe confirms the group is gone (spec §8.1)."""
 
-    def gone() -> bool:
-        return transport.run(["kill", "-0", f"-{pgid}"]).returncode != 0
+    def command(argv: list[str]) -> CommandResult:
+        if deadline_s is None:
+            return transport.run(argv)
+        remaining = deadline_s - now()
+        if remaining <= 0:
+            raise TransportError("process cleanup deadline expired")
+        return transport.run(argv, timeout_s=remaining)
 
-    transport.run(["kill", "-TERM", f"-{pgid}"])
+    def gone() -> bool:
+        return command(["kill", "-0", f"-{pgid}"]).returncode != 0
+
+    command(["kill", "-TERM", f"-{pgid}"])
+    if gone():
+        return True
     deadline = now() + grace_s
+    if deadline_s is not None:
+        deadline = min(deadline, deadline_s - poll_s)
     while now() < deadline:
         if gone():
             return True
-        sleep(poll_s)
-    transport.run(["kill", "-KILL", f"-{pgid}"])
-    sleep(poll_s)
+        sleep(min(poll_s, max(0, deadline - now())))
+    command(["kill", "-KILL", f"-{pgid}"])
+    sleep(min(poll_s, max(0, (deadline_s - now()) / 2)) if deadline_s is not None else poll_s)
     return gone()
 
 
