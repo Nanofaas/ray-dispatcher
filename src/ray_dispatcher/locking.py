@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 from collections.abc import Callable
@@ -18,9 +17,9 @@ import json
 import os
 import sys
 import tempfile
+import time
 
-action, session_id, now_raw, ttl_raw = sys.argv[1:]
-now = float(now_raw)
+action, session_id, ttl_raw = sys.argv[1:]
 ttl = float(ttl_raw)
 lock_dir = os.path.join(os.environ["HOME"], ".ray_dispatcher", "locks")
 owner_path = os.path.join(lock_dir, "session.json")
@@ -29,6 +28,7 @@ os.makedirs(lock_dir, exist_ok=True)
 
 with open(guard_path, "a", encoding="utf-8") as guard:
     fcntl.flock(guard, fcntl.LOCK_EX)
+    now = time.time()
     try:
         with open(owner_path, encoding="utf-8") as owner_file:
             owner = json.load(owner_file)
@@ -74,15 +74,10 @@ class SessionLock:
         session_id: str,
         *,
         ttl_s: float = 60.0,
-        now: Callable[[], float] = time.time,
     ) -> None:
         self.transport = transport
         self.session_id = session_id
         self.ttl_s = ttl_s
-        self.now = now
-
-    def _payload(self) -> str:
-        return json.dumps({"session_id": self.session_id, "heartbeat": self.now()})
 
     def _operate(self, action: str) -> None:
         result = self.transport.run(
@@ -92,7 +87,6 @@ class SessionLock:
                 _LOCK_SCRIPT,
                 action,
                 self.session_id,
-                str(self.now()),
                 str(self.ttl_s),
             ]
         )

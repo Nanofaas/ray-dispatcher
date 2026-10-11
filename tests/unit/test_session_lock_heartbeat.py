@@ -10,7 +10,7 @@ def test_heartbeat_is_one_atomic_remote_operation():
     runs = [call[1] for call in t.calls if call[0] == "run"]
     assert len(runs) == 1
     assert runs[0][0:2] == ("python3", "-c")
-    assert runs[0][-4] == "heartbeat"
+    assert runs[0][-3] == "heartbeat"
 
 
 def test_release_is_one_atomic_remote_operation():
@@ -21,4 +21,4 @@ def test_release_is_one_atomic_remote_operation():
     runs = [call[1] for call in t.calls if call[0] == "run"]
     assert len(runs) == 1
     assert runs[0][0:2] == ("python3", "-c")
-    assert runs[0][-4] == "release"
+    assert runs[0][-3] == "release"

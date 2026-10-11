@@ -21,7 +21,7 @@ class LocalTransport:
         self, argv: Sequence[str], *, timeout_s: float | None = None
     ) -> CommandResult:
         completed = subprocess.run(
-            argv,
+            [arg.replace("now = time.time()", "now = 1000.0") if isinstance(arg, str) else arg for arg in argv],
             capture_output=True,
             text=True,
             timeout=timeout_s,
@@ -83,7 +83,7 @@ def _write_owner(home: Path, session_id: str, heartbeat: object) -> None:
 
 def test_live_lock_from_other_session_raises(tmp_path: Path):
     _write_owner(tmp_path, "other", 1000.0)
-    lock = SessionLock(LocalTransport(tmp_path), "mine", ttl_s=60, now=lambda: 1000)
+    lock = SessionLock(LocalTransport(tmp_path), "mine", ttl_s=60)
 
     with pytest.raises(HostInUseError, match="other"):
         lock.acquire()
@@ -94,7 +94,7 @@ def test_stale_or_corrupt_lock_is_taken_over(tmp_path: Path, heartbeat: object):
     _write_owner(tmp_path, "other", heartbeat)
 
     SessionLock(
-        LocalTransport(tmp_path), "mine", ttl_s=60, now=lambda: 1000
+        LocalTransport(tmp_path), "mine", ttl_s=60
     ).acquire()
 
     assert json.loads(_owner_file(tmp_path).read_text())["session_id"] == "mine"
@@ -106,7 +106,7 @@ def test_corrupt_owner_file_is_taken_over(tmp_path: Path, contents: bytes):
     owner.parent.mkdir(parents=True)
     owner.write_bytes(contents)
 
-    SessionLock(LocalTransport(tmp_path), "mine", now=lambda: 1000).acquire()
+    SessionLock(LocalTransport(tmp_path), "mine").acquire()
 
     assert json.loads(owner.read_text())["session_id"] == "mine"
 
@@ -114,7 +114,7 @@ def test_corrupt_owner_file_is_taken_over(tmp_path: Path, contents: bytes):
 def test_own_acquire_refreshes(tmp_path: Path):
     _write_owner(tmp_path, "mine", 1.0)
 
-    SessionLock(LocalTransport(tmp_path), "mine", now=lambda: 1000).acquire()
+    SessionLock(LocalTransport(tmp_path), "mine").acquire()
 
     assert json.loads(_owner_file(tmp_path).read_text())["heartbeat"] == 1000
 
@@ -122,9 +122,9 @@ def test_own_acquire_refreshes(tmp_path: Path):
 def test_lost_owner_cannot_heartbeat_or_release_new_owner(tmp_path: Path):
     _write_owner(tmp_path, "old", 0.0)
     transport = LocalTransport(tmp_path)
-    SessionLock(transport, "new", now=lambda: 1000).acquire()
+    SessionLock(transport, "new").acquire()
 
-    old = SessionLock(transport, "old", now=lambda: 1001)
+    old = SessionLock(transport, "old")
     with pytest.raises(SessionLockLostError, match="old"):
         old.heartbeat()
     old.release()
@@ -145,7 +145,6 @@ def test_concurrent_stale_takeover_has_exactly_one_winner(tmp_path: Path):
                 first_confirmed=first_confirmed,
             ),
             session,
-            now=lambda: 1000,
         )
         for index, session in enumerate(("one", "two"))
     ]
@@ -161,3 +160,14 @@ def test_concurrent_stale_takeover_has_exactly_one_winner(tmp_path: Path):
         outcomes = list(pool.map(acquire, locks))
 
     assert sorted(outcomes) == ["acquired", "blocked"]
+
+
+def test_client_clock_skew_cannot_steal_live_lock(tmp_path):
+    transport = LocalTransport(tmp_path)
+    first = SessionLock(transport, 'first')
+    second = SessionLock(transport, 'second')
+    first.now = lambda: 1000
+    second.now = lambda: 1061
+    first.acquire()
+    with pytest.raises(HostInUseError):
+        second.acquire()
