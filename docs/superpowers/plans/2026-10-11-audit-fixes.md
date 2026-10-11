@@ -118,7 +118,7 @@ Eseguire Task 1–10 nell'ordine. Task 1 e 2 sono correzioni isolate; Task 3 def
 - [x] Test session lock perso: nessun purge o modifica di ownership del nuovo proprietario; preservare l'errore originario, limitando il cleanup ai processi identificati della vecchia sessione.
 - [x] Rendere i test rossi, poi impedire nuove submission durante il teardown; richiedere cancellazione una volta, attendere i task e riconciliare i PID registrati/orfani prima di distruggere l'actor. Fermare il sweeper solo quando non serve più al drain. Non azzerare `_outstanding`, `_refs` e `_outcome` prima del successo della fase che li usa.
 - [x] Limitare il drain a 30 s complessivi, preservando la grace SIGTERM di 10 s quando il budget residuo lo permette. Limitare attese Ray, join e singole chiamate `transport.run(timeout_s=...)` al tempo residuo; alla scadenza non iniziare altre sonde e sollevare errore conservando sessione e diagnostica. Test con clock controllato e assert sul timeout passato al trasporto: il default SSH di 300 s non deve rendere illusorio il limite del drain.
-- [ ] E2E reale non eseguito (daemon Multipass irraggiungibile); test aggiunto: job con processo figlio, attendere una prova remota dell'avvio, uscire dal contesto, controllare che il gruppo sia morto prima di avviare una seconda sessione sulla stessa VM. Non accontentarsi dello stato CANCELLED restituito da Ray.
+- [x] E2E reale passato su Multipass: job con processo figlio, attendere una prova remota dell'avvio, uscire dal contesto, controllare che il gruppo sia morto prima di avviare una seconda sessione sulla stessa VM. Non accontentarsi dello stato CANCELLED restituito da Ray.
 - [x] `uv run pytest tests/unit/test_dispatcher.py tests/unit/test_reconcile_host.py tests/unit/test_terminate_pgroup.py tests/integration/test_backend_teardown.py tests/integration/test_backend_sweeper.py -q` deve passare; E2E nel Task 10. Commit `fix: drain remote work before releasing session ownership`.
 
 ### Task 6 — Classificare COLLECTION e HOST_LOST dove avvengono (rilievo 8)
@@ -176,7 +176,7 @@ Eseguire Task 1–10 nell'ordine. Task 1 e 2 sono correzioni isolate; Task 3 def
 - [x] Verificare corrispondenza audit/task: 1→5, 2→4, 3→1, 4→2, 5→3, 6→8, 7→7, 8→6, 9→8, 10→3, 11→9.
 - [x] Eseguire `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src` e `uv run pytest -q`. Tutti devono terminare con exit 0; indagare l'exit 143 osservato durante l'audit se si ripete, senza catalogarlo automaticamente come problema del codice.
 - [x] Eseguire `uv run --project examples/toy_batch pytest examples/toy_batch/tests -q` e controllare entrambi i lockfile con `uv lock --check` / `uv lock --check --project examples/toy_batch`.
-- [ ] Ambiente Multipass non disponibile: `uv run --group e2e pytest -o addopts= tests/e2e -m e2e -q`. Coprire smoke, timeout, teardown con figli attivi, secondo dispatcher, e cleanup delle VM al termine. Se manca l'ambiente, indicare gli E2E come non verificati, non come passati.
+- [x] Ambiente Multipass disponibile e suite E2E passata: `uv run --group e2e pytest -o addopts= tests/e2e -m e2e -q`. Coprire smoke, timeout, teardown con figli attivi, secondo dispatcher, e cleanup delle VM al termine. Se manca l'ambiente, indicare gli E2E come non verificati, non come passati.
 - [x] Revisionare i percorsi errore e la compatibilità di `running_hosts`; controllare che nessun lock venga rilasciato prima della conferma di cleanup e nessun vecchio source/env sia eliminato dopo rename fallito.
 - [x] Consegnare riepilogo dei fix, risultati dei comandi e limitazioni residue. Nessuna pubblicazione o merge automatico.
 
@@ -226,8 +226,26 @@ un solo FutureWarning di Ray. L’exit 143 osservato durante l’audit e una pri
 esecuzione non si è ripetuto nelle due suite complete terminate con successo;
 non è stato attribuito a una causa non dimostrata.
 
-Gli E2E reali restano non verificati: `multipass list --format json` termina con
+Prima dell’avvio del daemon gli E2E reali erano non verificati: `multipass list --format json` termina con
 exit 2, «cannot connect to the multipass socket». Nessuna VM creata.
 La matrice Linux/Python 3.10 e 3.13 è configurata in CI; localmente la suite è
 stata eseguita su macOS/Python 3.13. Nessuna riscrittura generale delle classi:
 è stata rimossa la duplicazione nella supervisione del processo.
+
+
+### Verifica Multipass successiva al merge — 2026-10-11
+
+Dopo l’avvio del daemon, eseguito su `main`:
+
+```sh
+.venv/bin/pytest -o addopts= tests/e2e -m e2e -q
+```
+
+**13 test passati**, exit 0, in 236,26 s, con un solo FutureWarning di Ray.
+Coperti provisioning, riuso e rebuild dell’ambiente, concorrenza, smoke,
+raccolta output, errori di comando, timeout, recupero degli slot e teardown
+con processo figlio prima dell’avvio di un secondo dispatcher.
+
+Inventario Multipass iniziale e finale vuoti: entrambe le VM temporanee
+`rd-test-0` e `rd-test-1` sono state eliminate. La precedente limitazione degli
+E2E non verificati è risolta. Nessuna modifica al codice necessaria.
