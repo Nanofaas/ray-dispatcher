@@ -246,7 +246,8 @@ class HostProvisioner:
         # The `mv staging source` rename is atomic within one parent dir; the brief
         # window where source is absent is acceptable pre-runtime (no readers yet).
         self._checked(
-            ["sh", "-c", f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; "
+            ["sh", "-c", f"set -e; if [ ! -e {src} ] && [ -e {old} ]; then mv {old} {src}; fi; "
+                         f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; "
                          f"mv {stg} {src}; rm -rf {old}"],
             "source atomic replace",
         )
@@ -302,7 +303,9 @@ class HostProvisioner:
         qenv, qstg = shlex.quote(env_dir), shlex.quote(staging)
         qold = shlex.quote(env_dir + ".old")
         self._checked(
-            ["sh", "-c", f"mkdir -p {shlex.quote(self._lo.project)}/envs; rm -rf {qold}; "
+            ["sh", "-c", f"set -e; mkdir -p {shlex.quote(self._lo.project)}/envs; "
+                         f"if [ ! -e {qenv} ] && [ -e {qold} ]; then mv {qold} {qenv}; fi; "
+                         f"rm -rf {qold}; "
                          f"if [ -e {qenv} ]; then mv {qenv} {qold}; fi; "
                          f"mv {qstg} {qenv}; rm -rf {qold}"],
             "env atomic publish",
