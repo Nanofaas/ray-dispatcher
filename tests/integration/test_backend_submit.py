@@ -1,3 +1,4 @@
+import threading
 import time
 
 import pytest
@@ -60,6 +61,7 @@ def test_submit_cancels_ref_when_session_is_lost_during_submission(monkeypatch):
         backend.submit("batch", Job(id="job", command=("true",)))
 
     assert cancelled == [ref]
+    assert list(backend._refs.values()) == [ref]
 
 
 def test_submit_and_resolve_succeeds(tmp_path, monkeypatch):
@@ -172,12 +174,19 @@ def test_status_returns_cancelled_for_cancelled_task(tmp_path, monkeypatch):
 
     # ponytail: inline closure so cloudpickle serializes it without a module reference
     def _blocking_transport(host: RemoteHost) -> FakeTransport:
+        stopped = threading.Event()
+
         def results(argv: list[str]) -> CommandResult:
             if 'printf %s "$HOME"' in " ".join(argv):
                 return CommandResult(0, "/home/ubuntu", "", 0.0)
             if "python3" in " ".join(argv):
-                time.sleep(5.0)
+                stopped.wait(timeout=10.0)
                 return CommandResult(0, "", "", 0.0)
+            if argv[0] == "cat" and argv[1].endswith("pid.json"):
+                return CommandResult(0, '{"pgid": 4242}', "", 0.0)
+            if argv[:2] == ["kill", "-0"]:
+                stopped.set()
+                return CommandResult(1, "", "", 0.0)
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
@@ -205,14 +214,24 @@ def test_cancel_running_job_writes_cancelled_result_json(tmp_path, monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
 
+    started = tmp_path / "runner-started"
+
     # ponytail: inline closure so cloudpickle serializes it without a module reference
     def _blocking_transport(host: RemoteHost) -> FakeTransport:
+        stopped = threading.Event()
+
         def results(argv: list[str]) -> CommandResult:
             if 'printf %s "$HOME"' in " ".join(argv):
                 return CommandResult(0, "/home/ubuntu", "", 0.0)
             if "python3" in " ".join(argv):
-                time.sleep(10.0)
+                started.write_text("running")
+                stopped.wait(timeout=10.0)
                 return CommandResult(0, "", "", 0.0)
+            if argv[0] == "cat" and argv[1].endswith("pid.json"):
+                return CommandResult(0, '{"pgid": 4242}', "", 0.0)
+            if argv[:2] == ["kill", "-0"]:
+                stopped.set()
+                return CommandResult(1, "", "", 0.0)
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
@@ -223,16 +242,10 @@ def test_cancel_running_job_writes_cancelled_result_json(tmp_path, monkeypatch):
     try:
         backend.setup(inv, _project())
         handle = backend.submit("batch-k", Job(id="jk", command=("sleep",)))
-        # wait until the task is actually running before cancelling
-        for _ in range(100):
-            if backend.status(handle) == JobStatus.RUNNING:
-                break
+        deadline = time.monotonic() + 10
+        while not started.exists() and time.monotonic() < deadline:
             time.sleep(0.05)
-        # status()==RUNNING only means "not finished yet" (ray.wait can't see inside
-        # a worker that's still spinning up); give the fresh per-test Ray worker time
-        # to actually enter the task body, otherwise cancel lands pre-start and the
-        # in-task handler this test targets never runs.
-        time.sleep(1.5)
+        assert started.exists(), "runner did not start"
         backend.cancel(handle)
         result = backend.resolve(handle)
         assert result.status == JobStatus.CANCELLED

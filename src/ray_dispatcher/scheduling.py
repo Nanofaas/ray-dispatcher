@@ -205,9 +205,9 @@ def reconcile_host(
 ) -> bool:
     """Terminate any orphaned process group recorded for a lost attempt (spec §8.2/§8.1).
 
-    Returns True when the host is confirmed clean: no pid file recorded, or the
-    recorded process group is gone after SIGTERM/SIGKILL. Returns False when a pid
-    file exists but cannot be parsed — the host stays quarantined for manual recovery.
+    Returns True when the recorded process group is gone after SIGTERM/SIGKILL.
+    Missing or unreadable PID metadata cannot confirm cleanup, so the host
+    stays quarantined for recovery.
     """
     if deadline_s is not None:
         remaining = deadline_s - time.monotonic()

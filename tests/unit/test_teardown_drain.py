@@ -4,9 +4,9 @@ import pytest
 
 from ray_dispatcher.backends import ssh_ray
 from ray_dispatcher.backends.ssh_ray import SshRayBackend
+from ray_dispatcher.dispatcher import Dispatcher
 from ray_dispatcher.errors import DispatcherError
 from ray_dispatcher.models import Inventory, JobHandle, Project, RemoteHost
-from ray_dispatcher.dispatcher import Dispatcher
 
 
 def test_teardown_keeps_resources_until_drain_finishes(monkeypatch):
@@ -77,3 +77,27 @@ def test_dispatcher_keeps_handles_on_failed_teardown(monkeypatch):
     with pytest.raises(DispatcherError):
         dispatcher.teardown()
     assert dispatcher._outstanding == [handle]
+
+
+def test_actor_failure_during_drain_is_dispatcher_error(monkeypatch):
+    backend = SshRayBackend()
+    actor = backend._actor = object()
+
+    def fail():
+        raise ssh_ray.ray.exceptions.RayError("actor unavailable")
+
+    monkeypatch.setattr(backend, "_drain_jobs", fail)
+    with pytest.raises(DispatcherError, match="actor unavailable"):
+        backend.teardown()
+    assert backend._actor is actor
+
+
+def test_session_loss_does_not_cancel_cleaning_worker_twice(monkeypatch):
+    backend = SshRayBackend()
+    ref = object()
+    backend._refs["token"] = ref
+    calls = []
+    monkeypatch.setattr(ssh_ray.ray, "cancel", calls.append)
+    backend._on_session_lost(ssh_ray.SessionLockLostError("lost"))
+    backend.cancel(JobHandle("b", "j", "token"))
+    assert calls == [ref]

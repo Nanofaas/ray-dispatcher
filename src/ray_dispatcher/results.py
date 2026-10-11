@@ -134,7 +134,7 @@ def collect_outputs(
         except TransportError as exc:
             # rsync exits 23/24 for "file vanished/not found" — but 23 also covers
             # permission and partial-transfer errors. Probe: if the file exists
-            # remotely, the pull itself failed -> surface it (SSH-class failure).
+            # remotely, the pull failed; the attempt driver classifies the error.
             if exc.returncode not in {23, 24}:
                 raise
             if transport.run(["test", "-e", remote_path]).returncode == 0:

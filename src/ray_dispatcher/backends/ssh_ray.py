@@ -22,9 +22,9 @@ from ..digests import runner_digest
 from ..errors import (
     DispatcherError,
     ModelValidationError,
+    NoHealthyHostsError,
     RayRuntimeConflictError,
     SessionLockLostError,
-    NoHealthyHostsError,
 )
 from ..models import (
     HostProvisioningResult,
@@ -42,9 +42,9 @@ from ..provisioning import ProvisioningOutcome, RemoteLayout, _default_transport
 from ..results import JobLayout, read_result_json, write_result_json
 from ..scheduling import (
     HostRuntime,
-    _LeaseLostError,
     Lease,
     LeaseService,
+    _LeaseLostError,
     reconcile_host,
     run_job,
     secret_env_map,
@@ -238,10 +238,10 @@ class SshRayBackend(ExecutionBackend):
             if self._session_loss is not None:
                 return
             self._session_loss = error
-            refs = list(self._refs.values())
-        for ref in refs:
+            refs = list(self._refs.items())
+        for token, ref in refs:
             try:
-                ray.cancel(ref)
+                self._request_cancel(token, ref)
             except BaseException:
                 _log.exception("failed to cancel task after session lock loss")
 
@@ -419,8 +419,7 @@ class SshRayBackend(ExecutionBackend):
         try:
             self._fail_if_session_lost()
         except BaseException:
-            self._refs.pop(token, None)
-            ray.cancel(ref)
+            self._request_cancel(token, ref)
             raise
         return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
 
@@ -441,11 +440,22 @@ class SshRayBackend(ExecutionBackend):
             return self._cancelled_result(handle).status
         return result.status
 
+    def _request_cancel(self, token: str, ref: object) -> None:
+        with self._session_loss_lock:
+            if token in self._cancel_requested:
+                return
+            self._cancel_requested.add(token)
+        try:
+            ray.cancel(ref)
+        except BaseException:
+            with self._session_loss_lock:
+                self._cancel_requested.discard(token)
+            raise
+
     def cancel(self, handle: JobHandle) -> None:
         ref = self._refs.get(handle.token)
-        if ref is not None and handle.token not in self._cancel_requested:
-            ray.cancel(ref)
-            self._cancel_requested.add(handle.token)
+        if ref is not None:
+            self._request_cancel(handle.token, ref)
 
     def resolve(self, handle: JobHandle) -> JobResult:
         self._fail_if_session_lost()
@@ -507,9 +517,7 @@ class SshRayBackend(ExecutionBackend):
         deadline = time.monotonic() + _DRAIN_TIMEOUT_S
         pending = list(self._refs.values())
         for token, ref in list(self._refs.items()):
-            if token not in self._cancel_requested:
-                ray.cancel(ref)
-                self._cancel_requested.add(token)
+            self._request_cancel(token, ref)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
@@ -539,7 +547,12 @@ class SshRayBackend(ExecutionBackend):
     def teardown(self, *, purge: bool = False) -> None:
         purge_errors: list[str] = []
         self._draining = True
-        self._drain_jobs()
+        try:
+            self._drain_jobs()
+        except ray.exceptions.RayError as exc:
+            raise DispatcherError(
+                f"remote cleanup not confirmed: {exc}; session locks retained"
+            ) from exc
         if purge:
             self._fail_if_session_lost()
         self._sweep_stop.set()
