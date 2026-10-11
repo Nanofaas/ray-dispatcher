@@ -6,9 +6,9 @@ the implementation plan.
 
 ## Installation and imports
 
-After the first PyPI release, install with `pip install ray-dispatcher` or
-`uv add ray-dispatcher`. Requires Python >=3.10. Until then, install from a
-checkout with `uv sync --locked`.
+Install with `pip install ray-dispatcher` or `uv add ray-dispatcher`.
+Requires Python >=3.10. For development, install from a checkout with
+`uv sync --locked`.
 
 ```python
 from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, Inventory, Job, Project
@@ -58,7 +58,7 @@ validation and an isolated wheel install, before uploading those exact artifacts
 Only the upload job receives OIDC permission. Unchanged versions do not publish;
 re-running an already successful release will fail because PyPI files cannot
 be overwritten. Fix failures and re-run the failed jobs before making another
-version bump. The current version stays at 0.1.1 until the first release is ready.
+version bump.
 
 ## Development checks
 
