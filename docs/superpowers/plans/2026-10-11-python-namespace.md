@@ -31,10 +31,10 @@
 
 **Interfaces:** `from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, Job`; firme invariate.
 
-- [ ] Test `test_namespace_exports_and_parents`: importare namespace, verificare export, parent con `__file__ is None`, runner adiacente esistente. Eseguirlo prima del move: deve fallire.
-- [ ] Spostare package; sostituire solo riferimenti a moduli e percorsi sorgente, preservando path remoti `.ray_dispatcher`. Aggiornare Hatch e sorgente coverage.
-- [ ] Aggiornare README con installazione invariata e migrazione degli import.
-- [ ] Ruff check/format, mypy, deptry e unit test devono passare. Commit locale dedicato.
+- [x] Test `test_namespace_exports_and_parents`: importare namespace, verificare export, parent con `__file__ is None`, runner adiacente esistente. Eseguirlo prima del move: deve fallire.
+- [x] Spostare package; sostituire solo riferimenti a moduli e percorsi sorgente, preservando path remoti `.ray_dispatcher`. Aggiornare Hatch e sorgente coverage.
+- [x] Aggiornare README con installazione invariata e migrazione degli import.
+- [x] Ruff check/format, mypy, deptry e unit test devono passare. Commit locale dedicato.
 
 ### Task 2: Distribuzioni e verifica finale
 
@@ -42,7 +42,25 @@
 
 **Interfaces:** wheel contiene `it/unimib/data/nanofaas/ray_dispatcher/remote_runner.py` e metadata `ray-dispatcher`.
 
-- [ ] `uv build` e `twine check --strict dist/*`: entrambe le distribuzioni valide.
-- [ ] Installare wheel in venv temporaneo; da `/tmp` verificare import, parent namespace e runner, senza PYTHONPATH né editable checkout.
-- [ ] Eseguire copertura unit con branch >=80%, suite completa Ray, test esempio ed E2E Multipass; verificare inventario finale vuoto.
-- [ ] Registrare risultati, revisione nativa, commit e push al nuovo remote Nanofaas già richiesto per il progetto. Nessun rilascio.
+- [x] `uv build` e `twine check --strict dist/*`: entrambe le distribuzioni valide.
+- [x] Installare wheel in venv temporaneo; da `/tmp` verificare import, parent namespace e runner, senza PYTHONPATH né editable checkout.
+- [x] Eseguire copertura unit con branch >=80%, suite completa Ray, test esempio ed E2E Multipass; verificare inventario finale vuoto.
+- [x] Registrare risultati, revisione nativa, commit e push al nuovo remote Nanofaas già richiesto per il progetto. Nessun rilascio.
+
+
+## Execution results — 2026-10-11
+
+- Native execution in an isolated worktree; namespace test failed before migration.
+- Full suite: 451 passed; unit suite: 420 passed, branch coverage 81.25%.
+- Example: 5 passed. Multipass E2E: 13 passed in 217.30s; final VM inventory empty.
+- Ruff, formatting, strict mypy, deptry, root/example audits passed.
+- Wheel and sdist passed strict Twine checks. Isolated wheel verified namespace
+  parents, public exports, runner, version, absence of old imports and MIT metadata.
+- Native review confirmed runtime source is unchanged except a runner docstring.
+- Ruling: namespace and release CI are committed together because their packaging
+  and import verification share one contract. PyPI setup was separately approved;
+  version stays 0.1.1 and no upload is performed during setup.
+- Release CI uses the SDK's Trusted Publishing pattern, environment `pypi`,
+  filename `release.yml`, and pinned PyPI action. The approved trigger differs:
+  version increase on main rather than the SDK's `v*` tags.
+- Account-side PyPI publisher requires user setup; no browser is available here.

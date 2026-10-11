@@ -1,6 +1,6 @@
-from ray_dispatcher.models import Project, RemoteHost
-from ray_dispatcher.provisioning import HostProvisioner, RemoteLayout
-from ray_dispatcher.ssh import FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.models import Project, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import HostProvisioner, RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import FakeTransport
 
 
 def _prov(tmp_path):

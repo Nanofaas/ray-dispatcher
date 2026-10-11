@@ -1,8 +1,8 @@
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.models import RemoteHost
-from ray_dispatcher.ssh import SshConfig
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import SshConfig
 
 
 def _host(tmp_path, **over):

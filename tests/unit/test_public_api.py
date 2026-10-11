@@ -1,4 +1,4 @@
-import ray_dispatcher as rd
+import it.unimib.data.nanofaas.ray_dispatcher as rd
 
 
 def test_public_value_objects_importable():

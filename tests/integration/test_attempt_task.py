@@ -1,16 +1,16 @@
 import ray
 
-from ray_dispatcher.backends.ssh_ray import HostLease, _attempt_task
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import HostLease, _attempt_task
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     Job,
     JobStatus,
     RemoteHost,
     RetryPolicy,
 )
-from ray_dispatcher.provisioning import RemoteLayout
-from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import HostRuntime
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _canned_runtime(host_name: str) -> HostRuntime:

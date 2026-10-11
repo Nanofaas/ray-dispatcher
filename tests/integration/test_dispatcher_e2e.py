@@ -1,9 +1,9 @@
 import pytest
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.dispatcher import Dispatcher
-from ray_dispatcher.errors import BatchExistsError
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.dispatcher import Dispatcher
+from it.unimib.data.nanofaas.ray_dispatcher.errors import BatchExistsError
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     HostProvisioningResult,
     Inventory,
     Job,
@@ -12,8 +12,8 @@ from ray_dispatcher.models import (
     ProvisioningReport,
     RemoteHost,
 )
-from ray_dispatcher.provisioning import ProvisioningOutcome
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import ProvisioningOutcome
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _project():
@@ -32,7 +32,7 @@ def test_dispatcher_run_succeeds_end_to_end(tmp_path, monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=2),))
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
 
-    from ray_dispatcher.backends.ssh_ray import SshRayBackend
+    from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
 
     # ponytail: inline closure so cloudpickle serializes without a module reference
     def _ok_transport(host: RemoteHost) -> FakeTransport:
@@ -64,8 +64,8 @@ def test_dispatcher_run_raises_batch_failed_when_raise_on_failure(tmp_path, monk
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
 
-    from ray_dispatcher.backends.ssh_ray import SshRayBackend
-    from ray_dispatcher.errors import BatchFailedError
+    from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+    from it.unimib.data.nanofaas.ray_dispatcher.errors import BatchFailedError
 
     def _fail_transport(host: RemoteHost) -> FakeTransport:
         def results(argv: list[str]) -> CommandResult:
@@ -92,7 +92,7 @@ def test_dispatcher_submit_raises_batch_exists_error(tmp_path, monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
 
-    from ray_dispatcher.backends.ssh_ray import SshRayBackend
+    from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
 
     # ponytail: inline closure so cloudpickle serializes without a module reference
     def _ok_transport(host: RemoteHost) -> FakeTransport:

@@ -4,7 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from ray_dispatcher.remote_runner import _tee
+from it.unimib.data.nanofaas.ray_dispatcher.remote_runner import _tee
 
 
 class _BrokenForward:
@@ -22,7 +22,7 @@ def test_tee_keeps_draining_to_file_when_forward_breaks(tmp_path):
     assert out.read_bytes() == b"abc" * 10000
 
 
-RUNNER = str(Path("src/ray_dispatcher/remote_runner.py").resolve())
+RUNNER = str(Path("src/it/unimib/data/nanofaas/ray_dispatcher/remote_runner.py").resolve())
 
 
 def _manifest(tmp_path, argv):

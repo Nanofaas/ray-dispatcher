@@ -1,4 +1,4 @@
-from ray_dispatcher.scheduling import LeasePool
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import LeasePool
 
 
 class Clock:

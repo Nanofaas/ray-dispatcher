@@ -2,8 +2,8 @@ import os
 
 import pytest
 
-from ray_dispatcher.errors import PathValidationError
-from ray_dispatcher.paths import ensure_within, normalize_relative
+from it.unimib.data.nanofaas.ray_dispatcher.errors import PathValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.paths import ensure_within, normalize_relative
 
 
 @pytest.mark.parametrize(

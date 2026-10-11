@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from ray_dispatcher import Dispatcher, Job
+from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, Job
 
 
 @pytest.mark.e2e

@@ -1,8 +1,8 @@
 import paramiko
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.ssh import SshConfig, build_connection
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import SshConfig, build_connection
 
 
 def test_build_connection_sets_host_user_port_and_identity(tmp_path):

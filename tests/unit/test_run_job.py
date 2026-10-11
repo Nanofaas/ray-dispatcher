@@ -1,15 +1,21 @@
 import json
 
-from ray_dispatcher.models import AttemptResult, FailureKind, Job, JobStatus, RetryPolicy
-from ray_dispatcher.provisioning import RemoteLayout
-from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import (
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
+    AttemptResult,
+    FailureKind,
+    Job,
+    JobStatus,
+    RetryPolicy,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import (
     HostRuntime,
     Lease,
     _HostCleanupError,
     run_job,
 )
-from ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError
 
 
 class FakeLease:
@@ -174,7 +180,7 @@ def test_unclean_timeout_quarantines_host(monkeypatch, tmp_path):
         error="job timed out",
     )
     monkeypatch.setattr(
-        "ray_dispatcher.scheduling.execute_attempt",
+        "it.unimib.data.nanofaas.ray_dispatcher.scheduling.execute_attempt",
         lambda *a, **k: (_ for _ in ()).throw(_HostCleanupError(result=timed_out)),
     )
     result = run_job(
@@ -194,7 +200,7 @@ def test_unclean_cancel_quarantines_then_preserves_interrupt(monkeypatch, tmp_pa
     lease = FakeLease(["a"])
     interrupt = KeyboardInterrupt()
     monkeypatch.setattr(
-        "ray_dispatcher.scheduling.execute_attempt",
+        "it.unimib.data.nanofaas.ray_dispatcher.scheduling.execute_attempt",
         lambda *a, **k: (_ for _ in ()).throw(_HostCleanupError(interrupted=interrupt)),
     )
     result = run_job(
@@ -211,7 +217,7 @@ def test_unclean_cancel_quarantines_then_preserves_interrupt(monkeypatch, tmp_pa
 
 
 def test_lost_capacity_preserves_completed_attempts(tmp_path):
-    from ray_dispatcher.errors import NoHealthyHostsError
+    from it.unimib.data.nanofaas.ray_dispatcher.errors import NoHealthyHostsError
 
     class LostCapacity(FakeLease):
         def acquire(self, attempt_id, *, exclude=()):
@@ -242,7 +248,9 @@ def test_cancel_preserves_attempt_history(tmp_path, monkeypatch):
             raise TransportError("retry")
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr("ray_dispatcher.scheduling.execute_attempt", execute)
+    monkeypatch.setattr(
+        "it.unimib.data.nanofaas.ray_dispatcher.scheduling.execute_attempt", execute
+    )
     result = run_job(
         Job("jobA", ("true",)),
         batch_id="b1",
@@ -296,7 +304,7 @@ def test_command_failure_dominates_collection_failure(tmp_path):
 
 
 def test_host_loss_is_quarantined_before_retry(tmp_path):
-    from ray_dispatcher.scheduling import _LeaseLostError
+    from it.unimib.data.nanofaas.ray_dispatcher.scheduling import _LeaseLostError
 
     class LostLease(FakeLease):
         def raise_if_lost(self):

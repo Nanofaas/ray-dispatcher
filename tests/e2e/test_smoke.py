@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ray_dispatcher import Dispatcher, InputSpec, Job, JobStatus, OutputSpec
+from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, InputSpec, Job, JobStatus, OutputSpec
 
 
 @pytest.mark.e2e

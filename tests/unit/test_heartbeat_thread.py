@@ -2,9 +2,9 @@ import time
 
 import pytest
 
-from ray_dispatcher.errors import SessionLockLostError
-from ray_dispatcher.locking import HeartbeatThread, SessionLock
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.errors import SessionLockLostError
+from it.unimib.data.nanofaas.ray_dispatcher.locking import HeartbeatThread, SessionLock
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def test_heartbeat_thread_beats_then_stops():

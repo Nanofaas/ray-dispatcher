@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from ray_dispatcher.digests import environment_digest
-from ray_dispatcher.models import Project
+from it.unimib.data.nanofaas.ray_dispatcher.digests import environment_digest
+from it.unimib.data.nanofaas.ray_dispatcher.models import Project
 
 
 def _project(tmp_path: Path, **over) -> Project:

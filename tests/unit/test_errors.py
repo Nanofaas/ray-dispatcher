@@ -1,6 +1,6 @@
 import pytest
 
-from ray_dispatcher import errors as e
+from it.unimib.data.nanofaas.ray_dispatcher import errors as e
 
 
 def test_hierarchy_roots():

@@ -1,6 +1,11 @@
 import pytest
 
-from ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError, write_remote_file
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import (
+    CommandResult,
+    FakeTransport,
+    TransportError,
+    write_remote_file,
+)
 
 
 def _runs(t):

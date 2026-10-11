@@ -1,6 +1,6 @@
 import pytest
 
-from ray_dispatcher.results import publish_job_outputs
+from it.unimib.data.nanofaas.ray_dispatcher.results import publish_job_outputs
 
 
 def test_publish_renames_staging_into_outputs(tmp_path):

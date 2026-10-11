@@ -1,5 +1,5 @@
-from ray_dispatcher.scheduling import reconcile_host
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import reconcile_host
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _runs(t):

@@ -3,7 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-RUNNER = str(Path("src/ray_dispatcher/remote_runner.py").resolve())
+RUNNER = str(Path("src/it/unimib/data/nanofaas/ray_dispatcher/remote_runner.py").resolve())
 
 
 def _manifest(tmp_path, argv, env=None, secret_env=None):

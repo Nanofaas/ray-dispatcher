@@ -4,6 +4,62 @@ Generic, Ray-scheduled dispatcher for subprocess jobs on SSH-accessible VMs.
 See `docs/superpowers/specs/` for the design and `docs/superpowers/plans/` for
 the implementation plan.
 
+## Installation and imports
+
+After the first PyPI release, install with `pip install ray-dispatcher` or
+`uv add ray-dispatcher`. Requires Python >=3.10. Until then, install from a
+checkout with `uv sync --locked`.
+
+```python
+from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, Inventory, Job, Project
+```
+
+The installable distribution remains `ray-dispatcher`. Imports have migrated
+from `ray_dispatcher` to `it.unimib.data.nanofaas.ray_dispatcher`; update existing
+consumers. There is no legacy import alias. Parent packages are implicit
+PEP 420 namespaces, so other distributions can share the Nanofaas namespace.
+
+Licensed under the [MIT License](LICENSE).
+
+## Publishing
+
+The [release workflow](.github/workflows/release.yml) publishes to PyPI when a
+push to `main` increases the version. Update both `version` in `pyproject.toml`
+and `__version__` in `src/it/unimib/data/nanofaas/ray_dispatcher/__init__.py`,
+then update both locks and commit them together with the version bump:
+
+```sh
+uv lock
+uv lock --project examples/toy_batch
+```
+
+Version decreases and mismatched versions fail the workflow.
+
+Before the first release, configure a GitHub **pending trusted publisher** at
+[PyPI account Publishing](https://pypi.org/manage/account/publishing/):
+
+| Setting | Value |
+| --- | --- |
+| PyPI project name | `ray-dispatcher` |
+| GitHub owner | `Nanofaas` |
+| Repository | `ray-dispatcher` |
+| Workflow filename | `release.yml` |
+| Environment | `pypi` |
+
+See the [official setup instructions](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+The pending publisher creates the PyPI project on the first successful upload;
+it does not reserve the name. No API token or repository secret is needed.
+
+Run **PyPI release → Run workflow** in GitHub Actions to verify the complete
+release pipeline without uploading anything. Download the `python-distributions`
+artifact to inspect wheel and sdist. A version bump on `main` runs the same
+checks on Python 3.10 and 3.13, including integration tests, audits, metadata
+validation and an isolated wheel install, before uploading those exact artifacts.
+Only the upload job receives OIDC permission. Unchanged versions do not publish;
+re-running an already successful release will fail because PyPI files cannot
+be overwritten. Fix failures and re-run the failed jobs before making another
+version bump. The current version stays at 0.1.1 until the first release is ready.
+
 ## Development checks
 
 ```sh
@@ -80,5 +136,6 @@ require review and passing checks. Secret scanning and push protection are
 enabled on GitHub.
 
 CI builds wheel and sdist, validates their metadata with Twine and installs the
-wheel in a clean environment outside the checkout. No package is published by
-these checks. See the [repository](https://github.com/Nanofaas/ray-dispatcher).
+wheel in a clean environment outside the checkout. The release workflow reuses
+these checks before publishing a version bump. See the
+[repository](https://github.com/Nanofaas/ray-dispatcher).

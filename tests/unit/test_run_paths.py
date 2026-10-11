@@ -1,4 +1,4 @@
-from ray_dispatcher.provisioning import RemoteLayout, RunPaths
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout, RunPaths
 
 
 def test_run_dir_under_root():

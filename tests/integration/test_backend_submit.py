@@ -3,10 +3,10 @@ import time
 
 import pytest
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
-from ray_dispatcher.errors import SessionLockLostError
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.errors import SessionLockLostError
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     HostProvisioningResult,
     Inventory,
     Job,
@@ -15,8 +15,8 @@ from ray_dispatcher.models import (
     ProvisioningReport,
     RemoteHost,
 )
-from ray_dispatcher.provisioning import ProvisioningOutcome
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import ProvisioningOutcome
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _project():
@@ -159,8 +159,8 @@ def test_status_returns_running_then_succeeded(tmp_path, monkeypatch):
 def test_status_unknown_handle_raises(tmp_path, monkeypatch):
     import pytest
 
-    from ray_dispatcher.errors import DispatcherError
-    from ray_dispatcher.models import JobHandle
+    from it.unimib.data.nanofaas.ray_dispatcher.errors import DispatcherError
+    from it.unimib.data.nanofaas.ray_dispatcher.models import JobHandle
 
     monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1"))
     backend = SshRayBackend(transport_factory=lambda h: FakeTransport(), results_dir=str(tmp_path))

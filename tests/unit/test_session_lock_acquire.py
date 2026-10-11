@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.locking import SessionLock
-from ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError
+from it.unimib.data.nanofaas.ray_dispatcher.locking import SessionLock
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport, TransportError
 
 
 def test_acquire_is_one_remote_flocked_python_operation():

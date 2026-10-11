@@ -1,8 +1,8 @@
 import ray
 
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
-from ray_dispatcher.errors import RayRuntimeConflictError
-from ray_dispatcher.models import Inventory, Project, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.errors import RayRuntimeConflictError
+from it.unimib.data.nanofaas.ray_dispatcher.models import Inventory, Project, RemoteHost
 
 
 def _project():

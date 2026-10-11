@@ -2,7 +2,7 @@
 """Standalone remote subprocess supervisor — runs ON the VM (spec §7).
 
 Invoked as: ``python remote_runner.py <manifest.json>``. Stdlib only; it must
-NOT import from ray_dispatcher, because it runs in the project venv where the
+NOT import the dispatcher package: it runs in the project venv where the
 package is absent. The job argv runs via Popen (no shell).
 """
 

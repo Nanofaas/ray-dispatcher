@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
-from ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
 
 
 @pytest.mark.parametrize(

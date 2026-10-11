@@ -1,6 +1,6 @@
-from ray_dispatcher.models import Job
-from ray_dispatcher.provisioning import RunPaths
-from ray_dispatcher.scheduling import build_runner_manifest
+from it.unimib.data.nanofaas.ray_dispatcher.models import Job
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RunPaths
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import build_runner_manifest
 
 
 def test_manifest_keys_match_remote_runner():
@@ -48,9 +48,9 @@ def test_manifest_cwd_dot_is_run_root():
 
 
 def test_dispatcher_disables_child_forwarding():
-    from ray_dispatcher.models import Job
-    from ray_dispatcher.provisioning import RunPaths
-    from ray_dispatcher.scheduling import build_runner_manifest
+    from it.unimib.data.nanofaas.ray_dispatcher.models import Job
+    from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RunPaths
+    from it.unimib.data.nanofaas.ray_dispatcher.scheduling import build_runner_manifest
 
     manifest = build_runner_manifest(
         Job("j", ("true",)), venv="/venv", run=RunPaths("/run"), secret_env={}

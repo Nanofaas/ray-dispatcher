@@ -2,11 +2,11 @@
 
 import pytest
 
-from ray_dispatcher.models import Job, JobStatus, RetryPolicy
-from ray_dispatcher.provisioning import RemoteLayout
-from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime, Lease, run_job
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.models import Job, JobStatus, RetryPolicy
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import HostRuntime, Lease, run_job
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 class _RecordingLease:

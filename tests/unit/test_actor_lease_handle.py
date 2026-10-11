@@ -2,8 +2,8 @@ import threading
 
 import pytest
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.backends.ssh_ray import _ActorLeaseHandle
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import _ActorLeaseHandle
 
 
 @pytest.mark.parametrize("failed", [False, True])

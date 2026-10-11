@@ -1,5 +1,5 @@
-from ray_dispatcher.models import AttemptResult, FailureKind, JobStatus
-from ray_dispatcher.scheduling import assemble_job_result
+from it.unimib.data.nanofaas.ray_dispatcher.models import AttemptResult, FailureKind, JobStatus
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import assemble_job_result
 
 
 def _attempt(n, host, status, rc, dur, fk=None, err=None):

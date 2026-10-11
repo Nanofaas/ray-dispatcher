@@ -1,8 +1,8 @@
 import json
 
-from ray_dispatcher.models import FailureKind, JobStatus
-from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import _failed_attempt
+from it.unimib.data.nanofaas.ray_dispatcher.models import FailureKind, JobStatus
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import _failed_attempt
 
 
 def test_failed_attempt_writes_attempt_json(tmp_path):

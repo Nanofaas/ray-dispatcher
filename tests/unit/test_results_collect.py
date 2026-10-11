@@ -1,9 +1,9 @@
 import pytest
 
-from ray_dispatcher.errors import PathValidationError
-from ray_dispatcher.models import OutputSpec
-from ray_dispatcher.results import collect_outputs
-from ray_dispatcher.ssh import FakeTransport, TransportError
+from it.unimib.data.nanofaas.ray_dispatcher.errors import PathValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import OutputSpec
+from it.unimib.data.nanofaas.ray_dispatcher.results import collect_outputs
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import FakeTransport, TransportError
 
 
 def _pulls(t):
@@ -50,7 +50,7 @@ def test_collect_classifies_missing_required_and_optional(tmp_path):
 
 def test_collect_swallows_rsync_file_not_found(tmp_path):
     """TransportError with returncode 23 and file genuinely absent remotely -> missing."""
-    from ray_dispatcher.ssh import CommandResult
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult
 
     staging = tmp_path / "staging"
     staging.mkdir()
@@ -97,7 +97,7 @@ class _FailingPullTransport(FakeTransport):
 
 
 def test_pull_failure_with_file_present_remotely_reraises(tmp_path):
-    from ray_dispatcher.ssh import CommandResult
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult
 
     staging = tmp_path / "staging"
     staging.mkdir()
@@ -108,7 +108,7 @@ def test_pull_failure_with_file_present_remotely_reraises(tmp_path):
 
 
 def test_pull_failure_with_file_absent_remotely_is_missing(tmp_path):
-    from ray_dispatcher.ssh import CommandResult
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult
 
     staging = tmp_path / "staging"
     staging.mkdir()

@@ -1,6 +1,6 @@
 import pytest
 
-from ray_dispatcher.results import JobLayout, create_attempt_dir
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout, create_attempt_dir
 
 
 def _layout(tmp_path):

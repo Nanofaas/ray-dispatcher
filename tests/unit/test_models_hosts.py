@@ -2,8 +2,8 @@ import textwrap
 
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.models import Inventory, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import Inventory, RemoteHost
 
 
 def test_remotehost_valid_defaults():

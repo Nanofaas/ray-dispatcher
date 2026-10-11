@@ -1,4 +1,4 @@
-from ray_dispatcher.ssh import SshConfig, build_rsync_argv
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import SshConfig, build_rsync_argv
 
 
 def _cfg():

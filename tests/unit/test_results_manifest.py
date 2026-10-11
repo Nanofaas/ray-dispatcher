@@ -1,7 +1,12 @@
 import json
 
-from ray_dispatcher.models import AttemptResult, FailureKind, JobResult, JobStatus
-from ray_dispatcher.results import write_attempt_json, write_result_json
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
+    AttemptResult,
+    FailureKind,
+    JobResult,
+    JobStatus,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.results import write_attempt_json, write_result_json
 
 
 def _attempt(n=1, status=JobStatus.SUCCEEDED, fk=None):

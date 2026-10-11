@@ -14,7 +14,7 @@ from pathlib import Path
 
 from multipass_vm_sdk import MultipassClient, MultipassVM, find_ssh_public_key
 
-from ray_dispatcher import (
+from it.unimib.data.nanofaas.ray_dispatcher import (
     Dispatcher,
     InputSpec,
     Inventory,

@@ -2,11 +2,11 @@ import threading
 
 import pytest
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
-from ray_dispatcher.dispatcher import Dispatcher
-from ray_dispatcher.errors import DispatcherError
-from ray_dispatcher.models import Inventory, JobHandle, Project, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.dispatcher import Dispatcher
+from it.unimib.data.nanofaas.ray_dispatcher.errors import DispatcherError
+from it.unimib.data.nanofaas.ray_dispatcher.models import Inventory, JobHandle, Project, RemoteHost
 
 
 def test_teardown_keeps_resources_until_drain_finishes(monkeypatch):

@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.errors import NoHealthyHostsError
-from ray_dispatcher.models import Job, JobStatus, RetryPolicy
-from ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.errors import NoHealthyHostsError
+from it.unimib.data.nanofaas.ray_dispatcher.models import Job, JobStatus, RetryPolicy
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
 
 
 def test_attempt_task_has_correct_ray_decoration():

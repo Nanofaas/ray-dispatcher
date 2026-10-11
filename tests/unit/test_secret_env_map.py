@@ -1,6 +1,6 @@
-from ray_dispatcher.models import Project, SecretFile
-from ray_dispatcher.provisioning import RemoteLayout
-from ray_dispatcher.scheduling import secret_env_map
+from it.unimib.data.nanofaas.ray_dispatcher.models import Project, SecretFile
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import secret_env_map
 
 
 def _project(secrets):

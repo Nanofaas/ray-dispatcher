@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.scheduling import Lease
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import Lease
 
 
 def test_lease_holds_all_fields():

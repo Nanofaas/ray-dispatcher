@@ -1,8 +1,8 @@
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.models import FailureKind, RetryPolicy
-from ray_dispatcher.scheduling import should_retry
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import FailureKind, RetryPolicy
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import should_retry
 
 
 def test_retryable_kind_under_budget_retries():

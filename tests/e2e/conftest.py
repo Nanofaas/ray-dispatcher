@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from multipass_vm_sdk import MultipassClient, MultipassVM, find_ssh_public_key
 
-from ray_dispatcher.models import Inventory, Project, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.models import Inventory, Project, RemoteHost
 
 # Number of VMs to launch for e2e tests. 2 is enough to test concurrency.
 _N_VMS = 2

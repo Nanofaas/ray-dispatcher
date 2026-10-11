@@ -3,16 +3,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ray_dispatcher.backends.base import ExecutionBackend
-from ray_dispatcher.dispatcher import Dispatcher
-from ray_dispatcher.errors import (
+from it.unimib.data.nanofaas.ray_dispatcher.backends.base import ExecutionBackend
+from it.unimib.data.nanofaas.ray_dispatcher.dispatcher import Dispatcher
+from it.unimib.data.nanofaas.ray_dispatcher.errors import (
     BatchExistsError,
     BatchFailedError,
     DispatcherError,
     ModelValidationError,
     ProvisioningError,
 )
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     HostProvisioningResult,
     Inventory,
     Job,

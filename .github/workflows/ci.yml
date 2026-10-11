@@ -3,6 +3,7 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  workflow_call:
   schedule:
     - cron: '23 6 * * 1'
 permissions:
@@ -60,4 +61,20 @@ jobs:
           uv venv /tmp/rd-wheel
           uv pip install --python /tmp/rd-wheel/bin/python dist/*.whl
           cd /tmp
-          /tmp/rd-wheel/bin/python -c 'from ray_dispatcher import Dispatcher, Job; from importlib.metadata import version; assert version("ray-dispatcher") == "0.1.1"'
+          /tmp/rd-wheel/bin/python - <<'PY'
+          import importlib
+          from importlib.metadata import version
+          from pathlib import Path
+          from it.unimib.data.nanofaas import ray_dispatcher as rd
+          assert rd.Dispatcher and rd.Job
+          assert version("ray-dispatcher") == rd.__version__
+          assert Path(rd.__file__).with_name("remote_runner.py").is_file()
+          for name in ("it", "it.unimib", "it.unimib.data", "it.unimib.data.nanofaas"):
+              assert importlib.import_module(name).__file__ is None
+          assert importlib.util.find_spec("ray_dispatcher") is None
+          PY
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error

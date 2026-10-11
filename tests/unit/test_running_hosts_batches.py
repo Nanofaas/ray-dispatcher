@@ -1,5 +1,5 @@
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
 
 
 def test_backend_preserves_same_job_id_in_two_batches(monkeypatch):

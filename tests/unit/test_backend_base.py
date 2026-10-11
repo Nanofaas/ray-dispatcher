@@ -2,7 +2,7 @@ import inspect
 
 import pytest
 
-from ray_dispatcher.backends.base import ExecutionBackend
+from it.unimib.data.nanofaas.ray_dispatcher.backends.base import ExecutionBackend
 
 
 def test_cannot_instantiate_abstract_backend():

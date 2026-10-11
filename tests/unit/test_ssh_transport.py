@@ -2,9 +2,9 @@ import subprocess
 
 import pytest
 
-from ray_dispatcher import ssh
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.ssh import SshConfig, SshTransport, TransportError
+from it.unimib.data.nanofaas.ray_dispatcher import ssh
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import SshConfig, SshTransport, TransportError
 
 
 def _cfg():

@@ -1,9 +1,18 @@
 import pytest
 
-from ray_dispatcher.errors import DispatcherError, NoHealthyHostsError, ProvisioningError
-from ray_dispatcher.models import Inventory, Project, ProvisioningReport, RemoteHost
-from ray_dispatcher.provisioning import ProvisioningOutcome, provision
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.errors import (
+    DispatcherError,
+    NoHealthyHostsError,
+    ProvisioningError,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
+    Inventory,
+    Project,
+    ProvisioningReport,
+    RemoteHost,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import ProvisioningOutcome, provision
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _project(tmp_path):

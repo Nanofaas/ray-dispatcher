@@ -1,4 +1,4 @@
-from ray_dispatcher.digests import runner_digest
+from it.unimib.data.nanofaas.ray_dispatcher.digests import runner_digest
 
 
 def test_runner_digest_hashes_contents(tmp_path):
@@ -12,5 +12,5 @@ def test_runner_digest_hashes_contents(tmp_path):
 
 def test_runner_digest_matches_real_runner():
     # the bundled runner exists and hashes without error
-    d = runner_digest("src/ray_dispatcher/remote_runner.py")
+    d = runner_digest("src/it/unimib/data/nanofaas/ray_dispatcher/remote_runner.py")
     assert len(d) == 64

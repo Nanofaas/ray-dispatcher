@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 
-from ray_dispatcher.digests import source_digest
+from it.unimib.data.nanofaas.ray_dispatcher.digests import source_digest
 
 
 def _tree(root: Path):

@@ -6,7 +6,14 @@ import time
 
 import pytest
 
-from ray_dispatcher import Dispatcher, FailureKind, Job, JobStatus, OutputSpec, Project
+from it.unimib.data.nanofaas.ray_dispatcher import (
+    Dispatcher,
+    FailureKind,
+    Job,
+    JobStatus,
+    OutputSpec,
+    Project,
+)
 
 
 @pytest.mark.e2e

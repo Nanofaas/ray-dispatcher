@@ -1,8 +1,12 @@
 import pytest
 
-from ray_dispatcher.models import Project, RemoteHost
-from ray_dispatcher.provisioning import HostProvisioner, RemoteLayout, _StepError
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.models import Project, RemoteHost
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import (
+    HostProvisioner,
+    RemoteLayout,
+    _StepError,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _prov(results):

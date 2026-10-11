@@ -1,10 +1,14 @@
 import pytest
 
-from ray_dispatcher.models import Job
-from ray_dispatcher.provisioning import RemoteLayout
-from ray_dispatcher.results import JobLayout
-from ray_dispatcher.scheduling import HostRuntime, _HostCleanupError, execute_attempt
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.models import Job
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import RemoteLayout
+from it.unimib.data.nanofaas.ray_dispatcher.results import JobLayout
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import (
+    HostRuntime,
+    _HostCleanupError,
+    execute_attempt,
+)
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _runtime() -> HostRuntime:

@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from ray_dispatcher.errors import NoHealthyHostsError
-from ray_dispatcher.scheduling import LeaseService
+from it.unimib.data.nanofaas.ray_dispatcher.errors import NoHealthyHostsError
+from it.unimib.data.nanofaas.ray_dispatcher.scheduling import LeaseService
 
 
 class Clock:

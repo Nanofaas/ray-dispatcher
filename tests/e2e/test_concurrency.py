@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from ray_dispatcher import Dispatcher, InputSpec, Job, JobStatus
+from it.unimib.data.nanofaas.ray_dispatcher import Dispatcher, InputSpec, Job, JobStatus
 
 
 @pytest.mark.e2e

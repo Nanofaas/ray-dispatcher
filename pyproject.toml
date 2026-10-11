@@ -13,6 +13,10 @@ dependencies = [
   "paramiko>=5,<6",
 ]
 
+[project.urls]
+Repository = "https://github.com/Nanofaas/ray-dispatcher"
+Issues = "https://github.com/Nanofaas/ray-dispatcher/issues"
+
 [project.optional-dependencies]
 progress = ["rich>=13,<15"]
 
@@ -35,7 +39,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/ray_dispatcher"]
+packages = ["src/it"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -61,7 +65,7 @@ max-complexity = 16
 "examples/toy_batch/run_batch.py" = ["S603", "S607"]
 
 [tool.coverage.run]
-source = ["ray_dispatcher"]
+source = ["it.unimib.data.nanofaas.ray_dispatcher"]
 branch = true
 
 [tool.coverage.report]
@@ -77,6 +81,8 @@ DEP002 = ["rich"]
 python_version = "3.10"
 strict = true
 files = ["src"]
+explicit_package_bases = true
+mypy_path = "src"
 
 [[tool.mypy.overrides]]
 module = ["fabric.*", "invoke.*", "paramiko.*"]

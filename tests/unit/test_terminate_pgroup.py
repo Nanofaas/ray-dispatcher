@@ -1,4 +1,8 @@
-from ray_dispatcher.ssh import CommandResult, FakeTransport, terminate_process_group
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import (
+    CommandResult,
+    FakeTransport,
+    terminate_process_group,
+)
 
 
 def _alive_for(n_checks):

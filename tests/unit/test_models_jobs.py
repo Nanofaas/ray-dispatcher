@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError, PathValidationError
-from ray_dispatcher.models import InputSpec, Job, OutputSpec
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError, PathValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import InputSpec, Job, OutputSpec
 
 
 def test_inputspec_normalizes_destination():

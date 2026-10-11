@@ -2,7 +2,7 @@ import time
 
 import ray
 
-from ray_dispatcher.backends.ssh_ray import HostLease, _ActorLeaseHandle
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import HostLease, _ActorLeaseHandle
 
 
 def test_actor_lease_acquire_release_roundtrip():

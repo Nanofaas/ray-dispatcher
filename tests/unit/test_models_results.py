@@ -1,7 +1,7 @@
 import pytest
 
-from ray_dispatcher.errors import ModelValidationError
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     AttemptResult,
     FailureKind,
     HostProvisioningResult,

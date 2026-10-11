@@ -1,5 +1,5 @@
-from ray_dispatcher.locking import SessionLock
-from ray_dispatcher.ssh import FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.locking import SessionLock
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import FakeTransport
 
 
 def test_heartbeat_is_one_atomic_remote_operation():

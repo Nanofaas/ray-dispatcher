@@ -4,17 +4,17 @@ import time
 
 import ray
 
-from ray_dispatcher.backends import ssh_ray
-from ray_dispatcher.backends.ssh_ray import SshRayBackend
-from ray_dispatcher.models import (
+from it.unimib.data.nanofaas.ray_dispatcher.backends import ssh_ray
+from it.unimib.data.nanofaas.ray_dispatcher.backends.ssh_ray import SshRayBackend
+from it.unimib.data.nanofaas.ray_dispatcher.models import (
     HostProvisioningResult,
     Inventory,
     Project,
     ProvisioningReport,
     RemoteHost,
 )
-from ray_dispatcher.provisioning import ProvisioningOutcome
-from ray_dispatcher.ssh import CommandResult, FakeTransport
+from it.unimib.data.nanofaas.ray_dispatcher.provisioning import ProvisioningOutcome
+from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult, FakeTransport
 
 
 def _project():
