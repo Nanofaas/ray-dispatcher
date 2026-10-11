@@ -29,7 +29,8 @@ jobs:
       - run: uv run --locked mypy src
       - run: uv run --locked deptry src
       - run: uv run --locked pytest tests/unit -q --cov --cov-report=term-missing --cov-report=xml
-      - run: uv run --locked pytest tests/integration -q
+      # Use the synced interpreter: uv run triggers Ray runtime-env repackaging.
+      - run: .venv/bin/python -m pytest tests/integration -q
       - run: uv audit --locked --python-version '${{ matrix.python }}' --python-platform linux
       - run: uv audit --locked --project examples/toy_batch --python-version 3.13 --python-platform linux
       - if: matrix.python == '3.13'

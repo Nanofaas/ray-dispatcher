@@ -17,13 +17,15 @@ uv run pytest tests/unit -q --cov --cov-report=term-missing
 uv build
 uv run twine check --strict dist/*
 uv run pytest tests/unit -q
-uv run pytest tests/integration -q
-uv run pytest -q
+.venv/bin/python -m pytest tests/integration -q
+.venv/bin/python -m pytest -q
 ```
 
 CI runs lint, formatting, strict type checking and the complete local test suite
 on Python 3.10 and 3.13. Integration tests start a local Ray runtime; unit tests
-do not start Ray.
+do not start Ray. Run integration tests with the interpreter created by
+`uv sync`: wrapping them in `uv run` activates Ray’s automatic runtime-environment
+repackaging, which is unnecessary for this exclusively local runtime.
 
 Real-VM tests require Python >=3.11, a running Multipass daemon and an SSH public
 key. They create disposable VMs and delete them after the session:
