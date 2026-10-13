@@ -125,10 +125,19 @@ class Project:
     secrets: tuple[SecretFile, ...] = ()
     exclude: tuple[str, ...] = (".venv/", ".git/", "solutions/")
     dependency_groups: tuple[str, ...] = ()
+    # argv run once per host as the last provisioning step, in the project source with the
+    # project environment (as jobs see it): warm caches, smoke-test imports. Failure marks the
+    # host unhealthy.
+    post_setup: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.path:
             raise ModelValidationError("project path must be non-empty")
+        for part in self.post_setup:
+            if not isinstance(part, str) or "\x00" in part:
+                raise ModelValidationError(
+                    f"post_setup parts must be strings without NUL: {part!r}"
+                )
         if not _PROJECT_ID_RE.fullmatch(self.project_id):
             raise ModelValidationError(f"invalid project_id: {self.project_id!r}")
         if not _EXACT_VERSION_RE.fullmatch(self.python):

@@ -102,3 +102,82 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
     result, session = p.provision()
     assert result.succeeded is False and session is None
     assert "other" in result.error
+
+
+def _prov_with(tmp_path, results, runner_path, post_setup):
+    return HostProvisioner(
+        FakeTransport(run_results=results),
+        Project(
+            path=str(tmp_path),
+            project_id="dfaas",
+            python="3.10.18",
+            uv_version="0.11.25",
+            post_setup=post_setup,
+        ),
+        RemoteHost(host="10.0.0.1", user="ubuntu"),
+        runner_path=runner_path,
+        session_id="sess-1",
+        heartbeat_interval_s=1000.0,
+    )
+
+
+def _hook_calls(p):
+    return [c for c in p.t.calls if c[0] == "run" and "exec python -c" in " ".join(c[1])]
+
+
+def test_post_setup_runs_last_in_the_project_environment(tmp_path):
+    runner = tmp_path / "remote_runner.py"
+    runner.write_text("print('r')")
+    p = _prov_with(tmp_path, _ok_results(tmp_path), str(runner), ("python", "-c", "import methods"))
+    result, session = p.provision()
+    session[1].stop()
+    assert result.succeeded is True
+    [hook] = _hook_calls(p)
+    script = hook[1][-1]
+    venv = p._lo.env_venv(result.environment_digest)
+    assert script.startswith(f"cd {p._lo.source} && ")
+    assert f"PATH={venv}/bin:" in script and f"VIRTUAL_ENV={venv}" in script
+    assert script.endswith("exec python -c 'import methods'")
+    assert p.t.calls.index(hook) > max(i for i, c in enumerate(p.t.calls) if c[0] == "push")
+
+
+def test_post_setup_failure_marks_the_host_unhealthy(tmp_path):
+    runner = tmp_path / "remote_runner.py"
+    runner.write_text("print('r')")
+    ok = _ok_results(tmp_path)
+
+    def failing(argv):
+        if "exec python -c" in " ".join(argv):
+            return CommandResult(1, "", "ModuleNotFoundError: methods", 0.0)
+        return ok(argv)
+
+    p = _prov_with(tmp_path, failing, str(runner), ("python", "-c", "import methods"))
+    result, session = p.provision()
+    assert result.succeeded is False and session is None
+    assert "post-setup command failed" in result.error and "ModuleNotFoundError" in result.error
+
+
+def test_no_post_setup_runs_no_extra_command(tmp_path):
+    runner = tmp_path / "remote_runner.py"
+    runner.write_text("print('r')")
+    p = _prov(tmp_path, _ok_results(tmp_path), str(runner))
+    result, session = p.provision()
+    session[1].stop()
+    assert result.succeeded is True
+    assert not any(c[0] == "run" and "exec " in " ".join(c[1]) for c in p.t.calls)
+
+
+def test_post_setup_parts_must_be_strings_without_nul(tmp_path):
+    import pytest
+
+    from it.unimib.data.nanofaas.ray_dispatcher.errors import ModelValidationError
+
+    for bad in (("python", 3), ("python", "a\x00b")):
+        with pytest.raises(ModelValidationError, match="post_setup"):
+            Project(
+                path=str(tmp_path),
+                project_id="x",
+                python="3.10.18",
+                uv_version="0.11.25",
+                post_setup=bad,
+            )

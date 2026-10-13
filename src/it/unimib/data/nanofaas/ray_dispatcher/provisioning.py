@@ -365,6 +365,21 @@ class HostProvisioner:
                     f"{owner!r}, expected {self.host.user!r}"
                 )
 
+    def _post_setup(self, env_digest: str) -> None:
+        if not self.project.post_setup:
+            return
+        venv = shlex.quote(self._lo.env_venv(env_digest))
+        self._checked(
+            [
+                "sh",
+                "-c",
+                f"cd {shlex.quote(self._lo.source)} && "
+                f'PATH={venv}/bin:"$PATH" VIRTUAL_ENV={venv} '
+                f"exec {shlex.join(self.project.post_setup)}",
+            ],
+            "post-setup command",
+        )
+
     def provision(
         self,
     ) -> tuple[HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None]:
@@ -393,6 +408,8 @@ class HostProvisioner:
             self._install_runner()
             hb.raise_if_failed()
             self._copy_secrets()
+            hb.raise_if_failed()
+            self._post_setup(env_dig)
             hb.raise_if_failed()
         except Exception as exc:  # noqa: BLE001 — any step failure marks the host unhealthy
             cleanup_errors = []

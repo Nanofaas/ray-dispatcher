@@ -117,6 +117,11 @@ host, user and port (`ControlMaster=auto`, socket `~/.ssh/rd-%C`, closed after
 60 s idle): a job's inputs and outputs open one SSH connection instead of one
 each, so networks that rate-limit SSH connections do not block the host.
 
+`Project(post_setup=(...))` runs an argv once per host as the last provisioning
+step, in the synced source with the project environment on `PATH`, as jobs see
+it: warm the first imports so no measured job pays a cold start, or smoke-test
+the environment. A non-zero exit marks the host unhealthy.
+
 
 ## Quality gates
 
