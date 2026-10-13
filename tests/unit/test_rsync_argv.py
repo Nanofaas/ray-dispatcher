@@ -48,3 +48,28 @@ def test_rsync_argv_omits_chmod_by_default():
     cfg = SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file="/kh")
     argv = build_rsync_argv(cfg, "/src", "u@h:/dst", delete=False, excludes=())
     assert not any(a.startswith("--chmod") for a in argv)
+
+
+def test_argv_multiplexes_over_one_master_per_host():
+    # Networks that rate-limit SSH connections block a job's burst of rsync
+    # calls; one persistent master per (host, user, port) absorbs it.
+    argv = build_rsync_argv(_cfg(), "/a", "u@h:/b", delete=False, excludes=())
+    ssh_opt = argv[argv.index("-e") + 1]
+    assert "ControlMaster=auto" in ssh_opt
+    assert "ControlPersist=60s" in ssh_opt
+    path = next(p for p in ssh_opt.split() if p.startswith("ControlPath="))
+    assert path.endswith("/.ssh/rd-%C")
+    assert len(path.removeprefix("ControlPath=").replace("%C", "x" * 40)) < 104  # socket path limit
+
+
+def test_rsync_creates_the_control_directory(tmp_path, monkeypatch):
+    import subprocess
+
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import SshTransport
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    ran = []
+    monkeypatch.setattr(subprocess, "run", lambda argv, **kw: ran.append(argv))
+    SshTransport(_cfg()).push("/local", "/remote")
+    control = tmp_path / ".ssh"
+    assert ran and control.is_dir() and (control.stat().st_mode & 0o777) == 0o700

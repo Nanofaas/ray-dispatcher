@@ -20,6 +20,11 @@ from .models import RemoteHost
 DEFAULT_CONNECT_TIMEOUT_S = 10.0
 DEFAULT_CONTROL_TIMEOUT_S = 300.0
 DEFAULT_RSYNC_TIMEOUT_S = 300.0
+# rsync's OpenSSH connections share one master per (host, user, port): a job's
+# burst of transfers opens one connection, not one each, so networks that
+# rate-limit SSH connections do not block the host. The master closes itself
+# after this idle time.
+SSH_CONTROL_PERSIST = "60s"
 
 
 class _DefaultTimeout:
@@ -140,9 +145,16 @@ class FakeTransport:
         self.calls.append(("pull", (remote, local, delete, tuple(excludes))))
 
 
+def _control_path() -> str:
+    """The master socket of a (host, user, port): ``%C`` hashes it; kept short
+    for the Unix socket path limit (104 bytes on macOS)."""
+    return os.path.join(os.path.expanduser("~"), ".ssh", "rd-%C")
+
+
 def _ssh_e_option(cfg: SshConfig) -> str:
     """The rsync ``-e`` value: an ssh invocation carrying the same SSH settings
-    as Fabric. shlex.join keeps paths with spaces safe."""
+    as Fabric, multiplexed over one master connection per host. shlex.join keeps
+    paths with spaces safe."""
     parts = [
         "ssh",
         "-p",
@@ -155,6 +167,12 @@ def _ssh_e_option(cfg: SshConfig) -> str:
         "GlobalKnownHostsFile=/dev/null",
         "-o",
         "BatchMode=yes",
+        "-o",
+        "ControlMaster=auto",
+        "-o",
+        f"ControlPath={_control_path()}",
+        "-o",
+        f"ControlPersist={SSH_CONTROL_PERSIST}",
     ]
     if cfg.identity_file:
         parts += ["-i", cfg.identity_file]
@@ -251,6 +269,8 @@ class SshTransport:
 
     def _rsync(self, argv: list[str]) -> None:
         try:
+            # ssh does not create the directory of its control socket
+            os.makedirs(os.path.dirname(_control_path()), mode=0o700, exist_ok=True)
             subprocess.run(  # noqa: S603 — argv constructed by build_rsync_argv
                 argv,
                 check=True,

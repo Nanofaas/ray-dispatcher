@@ -112,6 +112,11 @@ The dispatcher disables the runner's duplicate forwarding over SSH to avoid
 capturing unbounded child output in worker memory. The standalone runner still
 forwards output by default.
 
+File transfers use OpenSSH `rsync` multiplexed over one master connection per
+host, user and port (`ControlMaster=auto`, socket `~/.ssh/rd-%C`, closed after
+60 s idle): a job's inputs and outputs open one SSH connection instead of one
+each, so networks that rate-limit SSH connections do not block the host.
+
 
 ## Quality gates
 
