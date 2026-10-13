@@ -1,6 +1,6 @@
 [project]
 name = "ray-dispatcher"
-version = "0.1.4"
+version = "0.1.5"
 description = "Generic Ray-scheduled dispatcher for subprocess jobs on SSH-accessible VMs."
 readme = "README.md"
 license = "MIT"
