@@ -529,8 +529,10 @@ def provision(
     healthy = [r for r in report.hosts if r.succeeded]
     if require_all_hosts and len(healthy) != len(inventory.hosts):
         outcome.release_all()
-        raise ProvisioningError(report, "require_all_hosts=True: not every host provisioned")
+        raise ProvisioningError(
+            report, f"require_all_hosts=True: not every host provisioned: {report.failures()}"
+        )
     if not healthy:
         outcome.release_all()
-        raise NoHealthyHostsError("no host provisioned successfully")
+        raise NoHealthyHostsError(f"no host provisioned successfully: {report.failures()}")
     return outcome

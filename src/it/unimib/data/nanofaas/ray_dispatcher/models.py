@@ -303,3 +303,7 @@ class HostProvisioningResult:
 @dataclass(frozen=True)
 class ProvisioningReport:
     hosts: tuple[HostProvisioningResult, ...]
+
+    def failures(self) -> str:
+        """Each failed host and why, for error messages."""
+        return "; ".join(f"{h.host}: {h.error}" for h in self.hosts if not h.succeeded)

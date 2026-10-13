@@ -83,7 +83,9 @@ class Dispatcher:
         if self._require_all_hosts:
             failed = [h for h in report.hosts if not h.succeeded]
             if failed:
-                raise ProvisioningError(report, f"{len(failed)} host(s) failed provisioning")
+                raise ProvisioningError(
+                    report, f"{len(failed)} host(s) failed provisioning: {report.failures()}"
+                )
         self._setup_done = True
         self._setup_report = report
         return report

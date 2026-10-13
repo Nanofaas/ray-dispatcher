@@ -171,3 +171,29 @@ def test_release_all_stops_all_then_attempts_every_release_and_aggregates_errors
     assert "first failed" in str(exc_info.value)
     assert "second failed" in str(exc_info.value)
     assert outcome.sessions == {}
+
+
+def test_provisioning_errors_name_each_failed_host_and_why(tmp_path):
+    inv = Inventory((RemoteHost(host="good", user="ubuntu"), RemoteHost(host="bad", user="ubuntu")))
+
+    def factory(h):
+        return FakeTransport(run_results=_ok if h.host == "good" else _fail)
+
+    with pytest.raises(ProvisioningError) as ei:
+        provision(
+            inv,
+            _project(tmp_path),
+            runner_path=_runner(tmp_path),
+            transport_factory=factory,
+            require_all_hosts=True,
+        )
+    message = str(ei.value)
+    assert "bad: required tool 'python3' missing" in message and "good" not in message
+
+    with pytest.raises(NoHealthyHostsError, match="bad: required tool .python3. missing"):
+        provision(
+            Inventory((RemoteHost(host="bad", user="ubuntu"),)),
+            _project(tmp_path),
+            runner_path=_runner(tmp_path),
+            transport_factory=lambda h: FakeTransport(run_results=_fail),
+        )
