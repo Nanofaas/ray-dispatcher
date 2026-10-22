@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 
 from .errors import HostInUseError, SessionLockLostError
@@ -90,7 +91,8 @@ class SessionLock:
                 action,
                 self.session_id,
                 str(self.ttl_s),
-            ]
+            ],
+            **({"timeout_s": self.ttl_s / 3} if action == "heartbeat" else {}),
         )
         if result.returncode == 0:
             return
@@ -129,20 +131,62 @@ class HeartbeatThread(threading.Thread):
         self._failure_callback: Callable[[SessionLockLostError], None] | None = None
         self._failure_lock = threading.Lock()
 
-    def run(self) -> None:
-        while not self._stopped.wait(self._interval):
+    def _record_failure(self, error: SessionLockLostError) -> None:
+        with self._failure_lock:
+            self._failure = error
+            self._failed.set()
+            callback = self._failure_callback
+        if callback is not None:
+            callback(error)
+
+    def _refresh_before(self, deadline: float) -> None:
+        # Fabric's execution timeout excludes SSH channel setup. Supervise the
+        # whole operation so an unresponsive connection cannot keep a host alive.
+        finished = threading.Event()
+        errors: list[Exception] = []
+
+        def refresh() -> None:
             try:
                 self._lock.heartbeat()
-            except SessionLockLostError as exc:
-                with self._failure_lock:
-                    self._failure = exc
-                    self._failed.set()
-                    callback = self._failure_callback
-                if callback is not None:
-                    callback(exc)
+            except Exception as exc:  # noqa: BLE001 — propagated to the supervisor
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        if time.monotonic() >= deadline:
+            raise TimeoutError("session heartbeat deadline expired")
+        threading.Thread(target=refresh, daemon=True).start()
+        while not self._stopped.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("session heartbeat deadline expired")
+            if finished.wait(min(remaining, 0.1)):
+                if errors:
+                    raise errors[0]
                 return
-            except Exception:  # noqa: BLE001 — heartbeat is best-effort; TTL is the net
-                _log.warning("session heartbeat failed; relying on TTL", exc_info=True)
+
+    def run(self) -> None:
+        last_confirmed = time.monotonic()
+        while not self._stopped.wait(self._interval):
+            requested_at = time.monotonic()
+            try:
+                self._refresh_before(last_confirmed + self._lock.ttl_s)
+            except SessionLockLostError as exc:
+                self._record_failure(exc)
+                return
+            except Exception as exc:  # noqa: BLE001 — transient failures are retried within TTL
+                if time.monotonic() - last_confirmed >= self._lock.ttl_s:
+                    self._record_failure(
+                        SessionLockLostError(
+                            f"session {self._lock.session_id!r} heartbeat unconfirmed for "
+                            f"{self._lock.ttl_s:g}s: {exc}"
+                        )
+                    )
+                    return
+                _log.warning("session heartbeat failed; retrying within TTL", exc_info=True)
+            else:
+                # The remote refresh happened after the request began, not necessarily on reply.
+                last_confirmed = requested_at
 
     def raise_if_failed(self) -> None:
         if self._failed.is_set():

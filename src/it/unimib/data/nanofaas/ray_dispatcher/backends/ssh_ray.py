@@ -595,11 +595,11 @@ class SshRayBackend(ExecutionBackend):
                 pid_paths = cast(list[str], get(actor.orphan_paths.remote(host)))
                 transport = self._transport_factory(self._inv_hosts[host])
                 try:
+                    cleanup_deadline = time.monotonic() + 20.0
+                    if deadline_s is not None:
+                        cleanup_deadline = min(cleanup_deadline, deadline_s)
                     clean = bool(pid_paths) and all(
-                        reconcile_host(transport, p, deadline_s=deadline_s)
-                        if deadline_s is not None
-                        else reconcile_host(transport, p)
-                        for p in pid_paths
+                        reconcile_host(transport, p, deadline_s=cleanup_deadline) for p in pid_paths
                     )
                 except Exception:  # noqa: BLE001 — unreachable host stays quarantined
                     clean = False

@@ -22,3 +22,14 @@ def test_release_is_one_atomic_remote_operation():
     assert len(runs) == 1
     assert runs[0][0:2] == ("python3", "-c")
     assert runs[0][-3] == "release"
+
+
+def test_heartbeat_transport_deadline_is_shorter_than_session_ttl():
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import CommandResult
+
+    class DeadlineTransport(FakeTransport):
+        def run(self, argv, *, timeout_s=None):
+            assert timeout_s is not None and 0 < timeout_s < 60
+            return CommandResult(0, "", "", 0)
+
+    SessionLock(DeadlineTransport(), "mine", ttl_s=60).heartbeat()

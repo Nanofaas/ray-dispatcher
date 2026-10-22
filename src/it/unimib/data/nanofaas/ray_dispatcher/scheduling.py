@@ -253,13 +253,12 @@ def reconcile_host(
     Missing or unreadable PID metadata cannot confirm cleanup, so the host
     stays quarantined for recovery.
     """
-    if deadline_s is not None:
-        remaining = deadline_s - time.monotonic()
-        if remaining <= 0:
-            return False
-        result = transport.run(["cat", pid_file], timeout_s=remaining)
-    else:
-        result = transport.run(["cat", pid_file])
+    if deadline_s is None:
+        deadline_s = time.monotonic() + 20.0
+    remaining = deadline_s - time.monotonic()
+    if remaining <= 0:
+        return False
+    result = transport.run(["cat", pid_file], timeout_s=remaining)
     if result.returncode != 0:
         return False  # runner may still be starting; absence does not prove the host clean
     pgid = _parse_pgid(result.stdout)
@@ -352,12 +351,18 @@ def _kill_remote_pgid(
 ) -> bool:
     """Terminate the recorded process group, waiting briefly for pid.json creation."""
     deadline = time.monotonic() + pid_wait_s
+    cleanup_deadline = time.monotonic() + 20.0
     while True:
         try:
-            result = transport.run(["cat", pid_path])
+            remaining = cleanup_deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            result = transport.run(["cat", pid_path], timeout_s=remaining)
             pgid = _parse_pgid(result.stdout) if result.returncode == 0 else None
             if pgid is not None:
-                return terminate_process_group(transport, pgid, grace_s=10.0)
+                return terminate_process_group(
+                    transport, pgid, grace_s=10.0, deadline_s=cleanup_deadline
+                )
         except Exception:
             return False
         if time.monotonic() >= deadline:

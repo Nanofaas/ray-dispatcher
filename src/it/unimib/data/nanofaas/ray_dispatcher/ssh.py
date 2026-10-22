@@ -6,6 +6,7 @@ import math
 import os
 import shlex
 import subprocess
+import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -217,6 +218,7 @@ class SshTransport:
         self.control_timeout_s = _validate_timeout(control_timeout_s, "control_timeout_s")
         self.rsync_timeout_s = _validate_timeout(rsync_timeout_s, "rsync_timeout_s")
         self._conn: Any = None  # lazily-built fabric.Connection (Task 5)
+        self._timed_out = False
 
     def push(
         self,
@@ -250,14 +252,14 @@ class SshTransport:
             effective_timeout = None
         else:
             effective_timeout = _validate_timeout(timeout_s, "timeout_s")
+        if self._timed_out:
+            raise TransportError("SSH connection disabled after an unconfirmed command timeout")
         if self._conn is None:
             self._conn = build_connection(self.cfg, connect_timeout_s=self.connect_timeout_s)
         command = shlex.join(argv)  # argv is library-controlled; never a user job string
         start = time.monotonic()
         try:
-            result = self._conn.run(
-                command, hide=True, warn=True, timeout=effective_timeout, in_stream=False
-            )
+            result = self._run_bounded(command, effective_timeout)
         except Exception as exc:  # noqa: BLE001 — uniform seam failure
             raise TransportError(f"ssh run failed for {command!r}: {exc}") from exc
         return CommandResult(
@@ -266,6 +268,35 @@ class SshTransport:
             stderr=result.stderr,
             duration_s=time.monotonic() - start,
         )
+
+    def _run_bounded(self, command: str, timeout: float | None) -> Any:
+        connection = self._conn
+        finished = threading.Event()
+        results: list[Any] = []
+        errors: list[BaseException] = []
+
+        def invoke() -> None:
+            try:
+                results.append(
+                    connection.run(command, hide=True, warn=True, timeout=timeout, in_stream=False)
+                )
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                finished.set()
+
+        # Invoke's own timer starts after channel setup and command acknowledgement.
+        # An outer deadline covers those phases as well. A timed-out transport is
+        # never reused: cleanup must not send later commands on an ambiguous session.
+        threading.Thread(target=invoke, daemon=True).start()
+        if not finished.wait(timeout):
+            self._timed_out = True
+            connection.cancelled = True
+            threading.Thread(target=connection.close, daemon=True).start()
+            raise TimeoutError(f"SSH operation exceeded {timeout}s")
+        if errors:
+            raise errors[0]
+        return results[0]
 
     def _rsync(self, argv: list[str]) -> None:
         try:
@@ -343,6 +374,21 @@ def write_remote_file(
         raise TransportError(f"failed to write {path}: {result.stderr}")
 
 
+class _CancellableConnection(fabric.Connection):  # type: ignore[misc]
+    cancelled = False
+
+    def open(self) -> Any:
+        # Fabric calls open() for run/create_session, including implicit reconnects.
+        # close() alone cannot cancel an in-progress client.connect().
+        if self.cancelled:
+            raise TransportError("SSH connection cancelled")
+        result = super().open()
+        if self.cancelled:
+            self.client.close()
+            raise TransportError("SSH connection cancelled during connect")
+        return result
+
+
 def build_connection(
     cfg: SshConfig, *, connect_timeout_s: float = DEFAULT_CONNECT_TIMEOUT_S
 ) -> fabric.Connection:
@@ -351,7 +397,7 @@ def build_connection(
     connect_kwargs: dict[str, object] = {}
     if cfg.identity_file:
         connect_kwargs["key_filename"] = cfg.identity_file
-    conn = fabric.Connection(
+    conn = _CancellableConnection(
         host=cfg.host,
         user=cfg.user,
         port=cfg.port,

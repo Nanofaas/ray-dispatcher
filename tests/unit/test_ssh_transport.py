@@ -116,3 +116,81 @@ def test_rsync_launch_error_raises_transport_error(monkeypatch):
     monkeypatch.setattr(ssh.subprocess, "run", boom)
     with pytest.raises(TransportError, match="rsync launch failed: rsync missing"):
         SshTransport(_cfg()).push("/a", "/b")
+
+
+def test_run_bounds_channel_setup_and_disables_timed_out_connection(monkeypatch):
+    import threading
+
+    release = threading.Event()
+    closed = threading.Event()
+
+    class Connection:
+        def run(self, command, **kwargs):
+            release.wait()
+            return type("Result", (), {"exited": 0, "stdout": "", "stderr": ""})()
+
+        def close(self):
+            closed.set()
+            release.set()
+
+    monkeypatch.setattr(ssh, "build_connection", lambda cfg, **kwargs: Connection())
+    transport = SshTransport(_cfg())
+    errors = []
+
+    def invoke():
+        try:
+            transport.run(["true"], timeout_s=0.02)
+        except TransportError as error:
+            errors.append(error)
+
+    worker = threading.Thread(target=invoke, daemon=True)
+    worker.start()
+    try:
+        worker.join(0.5)
+        assert not worker.is_alive(), "deadline must cover channel setup"
+        assert errors
+        assert closed.wait(0.5)
+        with pytest.raises(TransportError):
+            transport.run(["kill", "-TERM", "-123"])
+    finally:
+        release.set()
+        worker.join(1)
+
+
+def test_timeout_during_connect_never_dispatches_late_command(monkeypatch, tmp_path):
+    import threading
+    from types import SimpleNamespace
+
+    kh = tmp_path / "known_hosts"
+    kh.write_text("")
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file=str(kh))
+    connection = ssh.build_connection(cfg)
+    release = threading.Event()
+    dispatched = []
+    finished = threading.Event()
+    monkeypatch.setattr(connection.client, "connect", lambda **kwargs: release.wait())
+    monkeypatch.setattr(
+        connection.client, "get_transport", lambda: SimpleNamespace(is_active=lambda: True)
+    )
+    monkeypatch.setattr(connection.client, "close", lambda: None)
+    monkeypatch.setattr(connection, "_run", lambda *args, **kwargs: dispatched.append(args))
+    monkeypatch.setattr(ssh, "build_connection", lambda *args, **kwargs: connection)
+    original_run = connection.run
+
+    def observed_run(*args, **kwargs):
+        try:
+            return original_run(*args, **kwargs)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(connection, "run", observed_run)
+    transport = SshTransport(cfg)
+    try:
+        with pytest.raises(TransportError):
+            transport.run(["kill", "-TERM", "-123"], timeout_s=0.02)
+        release.set()
+        assert finished.wait(1)
+        assert not dispatched, "a timed-out connection must not issue a late command"
+    finally:
+        release.set()
+        connection.transport = None

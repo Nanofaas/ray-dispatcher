@@ -54,3 +54,33 @@ def test_reconcile_rejects_unsafe_pgid_without_killing():
         t = FakeTransport(run_results=results)
         assert reconcile_host(t, "/x/pid.json") is False
         assert not any(a[0] == "kill" for a in _runs(t))  # never issued a kill
+
+
+def test_reconciliation_always_limits_ssh_cleanup_time():
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import TransportError
+
+    class Transport(FakeTransport):
+        def run(self, argv, *, timeout_s=None):
+            assert timeout_s is not None and 0 < timeout_s <= 20
+            raise TransportError("unreachable")
+
+    import pytest
+
+    with pytest.raises(TransportError):
+        reconcile_host(Transport(), "/x/pid.json")
+
+
+def test_worker_cleanup_always_limits_ssh_time():
+    from it.unimib.data.nanofaas.ray_dispatcher.scheduling import _kill_remote_pgid
+    from it.unimib.data.nanofaas.ray_dispatcher.ssh import TransportError
+
+    deadlines = []
+
+    class Transport(FakeTransport):
+        def run(self, argv, *, timeout_s=None):
+            deadlines.append(timeout_s)
+            raise TransportError("unreachable")
+
+    assert not _kill_remote_pgid(Transport(), "/x/pid.json")
+    assert len(deadlines) == 1
+    assert deadlines[0] is not None and 0 < deadlines[0] <= 20
