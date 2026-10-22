@@ -190,7 +190,7 @@ def build_rsync_argv(
     chmod: str | None = None,
 ) -> list[str]:
     # --protect-args: stops the remote shell from mangling paths with spaces or special chars
-    argv = ["rsync", "-a", "--protect-args", "-e", _ssh_e_option(cfg)]
+    argv = ["rsync", "-a", "--compress", "--protect-args", "-e", _ssh_e_option(cfg)]
     if delete:
         argv.append("--delete")
     if chmod is not None:
