@@ -149,3 +149,60 @@ CI builds wheel and sdist, validates their metadata with Twine and installs the
 wheel in a clean environment outside the checkout. The release workflow reuses
 these checks before publishing a version bump. See the
 [repository](https://github.com/Nanofaas/ray-dispatcher).
+
+### Progressive host membership
+
+Opt in with `Dispatcher(inventory, project, elastic=True, capacity_wait_s=900)`.
+For fully concurrent preparation, construct it with `Inventory((), allow_empty=True)`
+and call `setup()` before provisioning any hosts. Empty setup is accepted only
+in elastic mode. Add ready machines with `dispatcher.add_hosts([RemoteHost(...)])`
+and submit jobs once `available_hosts()` first becomes nonempty. Initial hosts
+can also be supplied normally. The call returns a
+`ProvisioningReport`, including individual preparation failures. Even an entirely
+failed addition returns its report; it does not stop hosts already running jobs.
+Initial `setup()` retains its existing `require_all_hosts` behavior.
+
+After setup, `add_hosts` can run in a bounded pool of preparation threads while
+the campaign thread calls `status`, `resolve`, or `as_completed`. Use one host
+per call to admit faster hosts immediately. Provisioning and runtime preparation
+happen outside the membership lock; admission happens only after session locks,
+environments, sources, and runtime metadata are ready. The application owns
+this preparation pool and should stop submitting additions and join it during
+shutdown. `teardown()` closes admission and waits for existing preparations,
+releasing any prepared hosts that were not admitted. Its wait includes the
+underlying SSH/provisioning operations and their configured transport timeouts.
+Other job operations remain owned by one campaign thread.
+
+`available_hosts()` returns a tuple of healthy, admitted host names.
+`remove_hosts(["hostname"])` retires scheduling capacity, allowing existing jobs
+on that host to finish; it does not release the host's session lock prematurely.
+A registered identity cannot be reused after retirement alone. Once the cloud
+provider has positively confirmed that a VM was deleted or permanently stopped,
+call `confirm_hosts_stopped(["hostname"])` before launching a replacement. Local
+missing inventory or a failed SSH connection is not that confirmation. This API
+retires the old leases, waits up to 30 seconds for old attempts to acknowledge
+cleanup (or their Ray tasks to finish), and waits for any old reconciliation to
+finish. It then drops the old orphan metadata and stops local heartbeat threads
+without SSH-unlocking an address that might be reused. The same address can now
+be added again. Unknown host names are a no-op. A timeout retains the identity
+and can be retried; perform confirmation before teardown. This operation may run
+in a preparation thread concurrently with job collection. Stale heartbeat
+callbacks cannot retire the replacement.
+
+Elastic workers retrieve execution metadata from the live lease actor. Pending
+jobs are admitted up to the current slot count, independently of the initial
+Ray `vm_slot` resource, so added hosts can run jobs submitted earlier. Continue
+polling/collecting jobs to drive admission. If every host disappears, pending
+jobs and workers waiting to retry wait at most `capacity_wait_s` for new capacity;
+waiting consumes no attempt. Existing retry limits still bound failed attempts.
+If capacity never returns, jobs fail instead of waiting indefinitely.
+
+Session loss invalidates only the affected host's leases in elastic mode. Healthy
+jobs and collected results survive. Lost hosts remain retired even if orphan
+cleanup later succeeds. If remote process cleanup cannot be confirmed, teardown raises and retains the
+uncertain hosts' locks and lease actor for recovery. In elastic mode it releases
+healthy hosts' sessions once all Ray tasks have finished, so one unresolved VM
+does not keep the healthy fleet locked. Confirmation after cloud deletion clears
+this condition before teardown. Report cleanup failure separately from collected
+job results and retain cloud inventory for later cleanup. Static mode keeps its existing global
+session-loss handling and fixed scheduling behavior.

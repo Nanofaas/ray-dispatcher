@@ -55,9 +55,10 @@ class RemoteHost:
 @dataclass(frozen=True)
 class Inventory:
     hosts: tuple[RemoteHost, ...]
+    allow_empty: bool = False
 
     def __post_init__(self) -> None:
-        if not self.hosts:
+        if not self.hosts and not self.allow_empty:
             raise ModelValidationError("inventory must contain at least one host")
         seen: set[str] = set()
         for h in self.hosts:

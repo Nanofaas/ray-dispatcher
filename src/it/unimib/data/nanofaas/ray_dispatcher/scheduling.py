@@ -32,7 +32,16 @@ from dataclasses import dataclass, replace
 from typing import Protocol
 
 from .errors import DispatcherError, ModelValidationError, NoHealthyHostsError
-from .models import AttemptResult, FailureKind, Job, JobResult, JobStatus, Project, RetryPolicy
+from .models import (
+    AttemptResult,
+    FailureKind,
+    Job,
+    JobResult,
+    JobStatus,
+    Project,
+    RemoteHost,
+    RetryPolicy,
+)
 from .provisioning import RemoteLayout, RunPaths
 from .results import (
     CollectionResult,
@@ -88,11 +97,25 @@ class LeasePool:
         self._quarantined: set[str] = set()
         self._used: dict[str, set[int]] = {h: set() for h in hosts}
         self._leases: dict[str, Lease] = {}
+        self._revoked: dict[str, Lease] = {}
         self._ttl = lease_ttl_s
         self._now = now
         self._token_factory = token_factory
         self._pid_paths: dict[str, str] = {}  # lease token -> remote pid.json path
         self._orphans: dict[str, list[str]] = {}  # host -> pid paths dropped by quarantine
+
+    def add_hosts(self, hosts: Mapping[str, int]) -> None:
+        if set(hosts) & self._slots.keys():
+            raise ModelValidationError("host already registered; use a new host identity")
+        self._slots.update(hosts)
+        self._healthy.update(hosts)
+        self._used.update({host: set() for host in hosts})
+
+    def remove_hosts(self, hosts: Iterable[str]) -> None:
+        self._healthy.difference_update(hosts)
+
+    def available_hosts(self) -> tuple[str, ...]:
+        return tuple(sorted(self._live_hosts()))
 
     def _live_hosts(self) -> set[str]:
         return self._healthy - self._quarantined
@@ -137,6 +160,7 @@ class LeasePool:
         return lease
 
     def release(self, token: str) -> bool:
+        self._revoked.pop(token, None)
         lease = self._leases.pop(token, None)
         if lease is None:
             return False
@@ -167,6 +191,7 @@ class LeasePool:
         self._quarantined.add(host)
         for token in [t for t, ls in self._leases.items() if ls.host == host]:
             lease = self._leases.pop(token)
+            self._revoked[token] = lease
             self._used[lease.host].discard(lease.slot)
             pid_path = self._pid_paths.pop(token, None)
             if pid_path is not None:
@@ -188,6 +213,25 @@ class LeasePool:
 
     def current_hosts(self) -> dict[str, str]:
         return {ls.attempt_id: ls.host for ls in self._leases.values()}
+
+    def assigned_hosts(self) -> dict[str, str]:
+        return {ls.attempt_id: ls.host for ls in (*self._leases.values(), *self._revoked.values())}
+
+    def forget_stopped_host(self, host: str, finished_jobs: Iterable[str] = ()) -> bool:
+        finished = set(finished_jobs)
+        self._revoked = {
+            token: lease
+            for token, lease in self._revoked.items()
+            if lease.host != host or lease.attempt_id not in finished
+        }
+        if host in self.assigned_hosts().values():
+            return False
+        self._healthy.discard(host)
+        self._quarantined.discard(host)
+        self._orphans.pop(host, None)
+        self._slots.pop(host, None)
+        self._used.pop(host, None)
+        return True
 
 
 def _parse_pgid(stdout: str) -> int | None:
@@ -706,21 +750,36 @@ class LeaseService:
         hosts: Mapping[str, int],
         *,
         lease_ttl_s: float = 60.0,
+        capacity_wait_s: float = 0.0,
+        contexts: Mapping[str, tuple[HostRuntime, RemoteHost]] | None = None,
         now: Callable[[], float] = time.monotonic,
         token_factory: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
         self._pool = LeasePool(hosts, lease_ttl_s=lease_ttl_s, now=now, token_factory=token_factory)
         self._cond = asyncio.Condition()
+        self._capacity_wait_s = capacity_wait_s
+        self._contexts = dict(contexts or {})
 
     async def acquire(self, attempt_id: str, exclude: Iterable[str] = ()) -> Lease:
         async with self._cond:
+            empty_since: float | None = None
             while True:
                 lease = self._pool.acquire(attempt_id, exclude=exclude)
                 if lease is not None:
                     return lease
                 if self._pool.healthy_host_count() == 0:
-                    raise NoHealthyHostsError("no healthy hosts remain")
-                await self._cond.wait()
+                    if empty_since is None:
+                        empty_since = time.monotonic()
+                    remaining = self._capacity_wait_s - (time.monotonic() - empty_since)
+                    if remaining <= 0:
+                        raise NoHealthyHostsError("no healthy hosts remain")
+                    try:
+                        await asyncio.wait_for(self._cond.wait(), remaining)
+                    except asyncio.TimeoutError:
+                        raise NoHealthyHostsError("timed out waiting for healthy hosts") from None
+                else:
+                    empty_since = None
+                    await self._cond.wait()
 
     async def release(self, token: str) -> None:
         async with self._cond:
@@ -763,3 +822,43 @@ class LeaseService:
     async def orphan_paths(self, host: str) -> list[str]:
         async with self._cond:
             return self._pool.orphan_paths(host)
+
+    async def add_hosts(
+        self, hosts: Mapping[str, int], contexts: Mapping[str, tuple[HostRuntime, RemoteHost]]
+    ) -> None:
+        async with self._cond:
+            self._pool.add_hosts(hosts)
+            self._contexts.update(contexts)
+            self._cond.notify_all()
+
+    async def remove_hosts(self, hosts: Iterable[str]) -> None:
+        async with self._cond:
+            self._pool.remove_hosts(hosts)
+            self._cond.notify_all()
+
+    async def available_hosts(self) -> tuple[str, ...]:
+        async with self._cond:
+            return self._pool.available_hosts()
+
+    async def host_context(self, host: str) -> tuple[HostRuntime, RemoteHost]:
+        async with self._cond:
+            return self._contexts[host]
+
+    async def lose_host(self, host: str) -> None:
+        async with self._cond:
+            self._pool.remove_hosts((host,))
+            if host in self._pool.current_hosts().values():
+                self._pool.quarantine(host)
+            self._cond.notify_all()
+
+    async def assigned_hosts(self) -> dict[str, str]:
+        async with self._cond:
+            return self._pool.assigned_hosts()
+
+    async def forget_stopped_host(self, host: str, finished_jobs: Iterable[str] = ()) -> bool:
+        async with self._cond:
+            if not self._pool.forget_stopped_host(host, finished_jobs):
+                return False
+            self._contexts.pop(host, None)
+            self._cond.notify_all()
+            return True

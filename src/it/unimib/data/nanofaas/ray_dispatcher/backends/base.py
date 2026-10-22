@@ -7,7 +7,9 @@ cross this boundary, so a future non-Ray backend can satisfy the same contract.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 
+from ..errors import DispatcherError
 from ..models import (
     Inventory,
     Job,
@@ -16,6 +18,7 @@ from ..models import (
     JobStatus,
     Project,
     ProvisioningReport,
+    RemoteHost,
 )
 
 
@@ -42,3 +45,16 @@ class ExecutionBackend(ABC):
 
     @abstractmethod
     def teardown(self, *, purge: bool = False) -> None: ...
+
+    def add_hosts(self, hosts: Sequence[RemoteHost]) -> ProvisioningReport:
+        raise DispatcherError("backend does not support elastic hosts")
+
+    def remove_hosts(self, hosts: Sequence[str]) -> None:
+        raise DispatcherError("backend does not support elastic hosts")
+
+    def confirm_hosts_stopped(self, hosts: Sequence[str]) -> None:
+        """Forget hosts only after the infrastructure confirms their processes cannot run."""
+        raise DispatcherError("backend does not support confirmed host removal")
+
+    def available_hosts(self) -> tuple[str, ...]:
+        raise DispatcherError("backend does not expose host availability")

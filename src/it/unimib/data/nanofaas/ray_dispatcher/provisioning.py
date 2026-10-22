@@ -481,6 +481,7 @@ def provision(
     transport_factory: Callable[[RemoteHost], Transport] | None = None,
     session_id: str | None = None,
     min_disk_mb: int = 500,
+    allow_empty: bool = False,
 ) -> ProvisioningOutcome:
     for fname in ("pyproject.toml", "uv.lock"):
         if not Path(project.path, fname).is_file():
@@ -532,7 +533,7 @@ def provision(
         raise ProvisioningError(
             report, f"require_all_hosts=True: not every host provisioned: {report.failures()}"
         )
-    if not healthy:
+    if not healthy and not allow_empty:
         outcome.release_all()
         raise NoHealthyHostsError(f"no host provisioned successfully: {report.failures()}")
     return outcome

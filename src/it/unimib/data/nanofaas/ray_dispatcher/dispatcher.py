@@ -25,6 +25,7 @@ from .models import (
     JobStatus,
     Project,
     ProvisioningReport,
+    RemoteHost,
     RetryPolicy,
     _is_valid_job_id,
 )
@@ -49,6 +50,8 @@ class Dispatcher:
         raise_on_failure: bool = False,
         require_all_hosts: bool = True,
         backend: ExecutionBackend | None = None,
+        elastic: bool = False,
+        capacity_wait_s: float = 900.0,
     ) -> None:
         self._inventory = inventory
         self._project = project
@@ -65,6 +68,8 @@ class Dispatcher:
                 retry_policy=retry_policy,
                 results_dir=results_dir,
                 require_all_hosts=require_all_hosts,
+                elastic=elastic,
+                capacity_wait_s=capacity_wait_s,
             )
         self._backend = backend
         self._setup_done = False
@@ -89,6 +94,23 @@ class Dispatcher:
         self._setup_done = True
         self._setup_report = report
         return report
+
+    def add_hosts(self, hosts: Sequence[RemoteHost]) -> ProvisioningReport:
+        """Prepare and admit hosts; may run concurrently with collection after setup."""
+        if not self._setup_done:
+            raise DispatcherError("setup must finish before adding hosts")
+        return self._backend.add_hosts(hosts)
+
+    def remove_hosts(self, hosts: Sequence[str]) -> None:
+        """Retire hosts from new scheduling; existing leases finish normally."""
+        self._backend.remove_hosts(hosts)
+
+    def confirm_hosts_stopped(self, hosts: Sequence[str]) -> None:
+        """Forget hosts only after the infrastructure confirms their processes cannot run."""
+        self._backend.confirm_hosts_stopped(hosts)
+
+    def available_hosts(self) -> tuple[str, ...]:
+        return self._backend.available_hosts()
 
     def submit(self, jobs: Sequence[Job], *, batch_id: str | None = None) -> list[JobHandle]:
         ids = [job.id for job in jobs]
