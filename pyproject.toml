@@ -18,7 +18,7 @@ Repository = "https://github.com/Nanofaas/ray-dispatcher"
 Issues = "https://github.com/Nanofaas/ray-dispatcher/issues"
 
 [project.optional-dependencies]
-progress = ["rich>=13,<15"]
+progress = ["rich>=13,<16"]
 
 [dependency-groups]
 dev = [
