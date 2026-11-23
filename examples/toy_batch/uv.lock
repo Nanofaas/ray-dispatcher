@@ -755,7 +755,7 @@ wheels = [
 
 [[package]]
 name = "ray-dispatcher"
-version = "0.2.1"
+version = "0.3.0"
 source = { editable = "../../" }
 dependencies = [
     { name = "fabric" },
@@ -784,7 +784,7 @@ dev = [
     { name = "twine", specifier = ">=6,<8" },
     { name = "types-pyyaml" },
 ]
-e2e = [{ name = "multipass-vm-sdk", marker = "python_full_version >= '3.11'", specifier = "==0.6.0" }]
+e2e = [{ name = "multipass-vm-sdk", specifier = "==0.6.0" }]
 
 [[package]]
 name = "referencing"
