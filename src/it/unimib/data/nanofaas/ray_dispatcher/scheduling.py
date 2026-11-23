@@ -780,7 +780,7 @@ class LeaseService:
                         raise NoHealthyHostsError("no healthy hosts remain")
                     try:
                         await asyncio.wait_for(self._cond.wait(), remaining)
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         raise NoHealthyHostsError("timed out waiting for healthy hosts") from None
                 else:
                     empty_since = None
