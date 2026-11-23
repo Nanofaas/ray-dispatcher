@@ -59,19 +59,23 @@ import asyncio
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 ```
 
@@ -97,17 +101,20 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -173,28 +180,32 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
 def test_heartbeat_rejects_past_deadline_even_before_sweep():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
-    lease = pool.acquire("x")          # deadline 1060
-    clock.advance(70.0)                # now 1070 >= 1060, NOT swept yet
-    assert pool.heartbeat(lease.token) is False   # past deadline -> rejected
+    lease = pool.acquire("x")  # deadline 1060
+    clock.advance(70.0)  # now 1070 >= 1060, NOT swept yet
+    assert pool.heartbeat(lease.token) is False  # past deadline -> rejected
     # the lease was not extended (stored expiry is still the old deadline)
     assert pool._leases[lease.token].expiry_s == 1060.0
 
@@ -202,8 +213,8 @@ def test_heartbeat_rejects_past_deadline_even_before_sweep():
 def test_heartbeat_still_extends_a_live_lease():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
-    lease = pool.acquire("x")          # deadline 1060
-    clock.advance(30.0)                # now 1030 < 1060 -> live
+    lease = pool.acquire("x")  # deadline 1060
+    clock.advance(30.0)  # now 1030 < 1060 -> live
     assert pool.heartbeat(lease.token) is True
     assert pool._leases[lease.token].expiry_s == 1090.0
 ```
@@ -283,7 +294,7 @@ def test_reconcile_terminates_recorded_pgid():
             return CommandResult(0, '{"pid": 1234, "pgid": 4321}', "", 0.0)
         if argv[:2] == ["kill", "-0"]:
             return CommandResult(1, "", "", 0.0)  # probe: group already gone
-        return CommandResult(0, "", "", 0.0)      # TERM/KILL succeed
+        return CommandResult(0, "", "", 0.0)  # TERM/KILL succeed
 
     t = FakeTransport(run_results=results)
     assert reconcile_host(t, "/x/pid.json") is True
@@ -383,17 +394,20 @@ from ray_dispatcher.scheduling import LeaseService
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -409,11 +423,11 @@ def test_acquire_returns_lease_immediately_when_free():
 def test_acquire_blocks_until_release():
     async def scenario():
         svc = LeaseService({"a": 1}, now=Clock(), token_factory=_tokens())
-        first = await svc.acquire("job/1")     # consumes the only slot
+        first = await svc.acquire("job/1")  # consumes the only slot
         waiter = asyncio.create_task(svc.acquire("job/2"))
-        await asyncio.sleep(0.05)              # let the waiter block on the condition
-        assert not waiter.done()               # no capacity -> still waiting
-        await svc.release(first.token)         # frees the slot, notifies
+        await asyncio.sleep(0.05)  # let the waiter block on the condition
+        assert not waiter.done()  # no capacity -> still waiting
+        await svc.release(first.token)  # frees the slot, notifies
         second = await asyncio.wait_for(waiter, timeout=1.0)
         assert second is not None and second.host == "a"
 
@@ -453,9 +467,7 @@ class LeaseService:
         now: Callable[[], float] = time.monotonic,
         token_factory: Callable[[], str] = lambda: secrets.token_hex(16),
     ) -> None:
-        self._pool = LeasePool(
-            hosts, lease_ttl_s=lease_ttl_s, now=now, token_factory=token_factory
-        )
+        self._pool = LeasePool(hosts, lease_ttl_s=lease_ttl_s, now=now, token_factory=token_factory)
         self._cond = asyncio.Condition()
 
     async def acquire(self, attempt_id: str, exclude: Iterable[str] = ()) -> Lease:
@@ -514,19 +526,23 @@ from ray_dispatcher.scheduling import LeaseService
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -544,10 +560,10 @@ def test_sweep_returns_expired_hosts_and_wakes_waiters():
     async def scenario():
         clock = Clock(1000.0)
         svc = LeaseService({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
-        await svc.acquire("x")           # deadline 1060
-        clock.advance(100.0)             # past deadline
+        await svc.acquire("x")  # deadline 1060
+        clock.advance(100.0)  # past deadline
         hosts = await svc.sweep()
-        assert hosts == ["a"]            # quarantined, reported for reconcile
+        assert hosts == ["a"]  # quarantined, reported for reconcile
         assert await svc.quarantined_hosts() == ["a"]
 
     asyncio.run(scenario())
@@ -559,7 +575,7 @@ def test_mark_reconciled_restores_and_lets_acquire_proceed():
         svc = LeaseService({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
         await svc.acquire("x")
         clock.advance(100.0)
-        await svc.sweep()                # 'a' quarantined, lease dropped
+        await svc.sweep()  # 'a' quarantined, lease dropped
         assert await svc.quarantined_hosts() == ["a"]
         await svc.mark_reconciled("a")
         assert await svc.quarantined_hosts() == []
@@ -577,30 +593,34 @@ Expected: FAIL with `AttributeError: 'LeaseService' object has no attribute 'hea
 - [ ] **Step 3: Write the implementation (append to `LeaseService`)**
 
 ```python
-    async def heartbeat(self, token: str) -> bool:
-        async with self._cond:
-            return self._pool.heartbeat(token)
+async def heartbeat(self, token: str) -> bool:
+    async with self._cond:
+        return self._pool.heartbeat(token)
 
-    async def sweep(self) -> list[str]:
-        async with self._cond:
-            hosts = self._pool.sweep_expired()
-            if hosts:
-                self._cond.notify_all()  # capacity may have dropped -> re-check waiters
-            return hosts
 
-    async def quarantine(self, host: str) -> None:
-        async with self._cond:
-            self._pool.quarantine(host)
-            self._cond.notify_all()
+async def sweep(self) -> list[str]:
+    async with self._cond:
+        hosts = self._pool.sweep_expired()
+        if hosts:
+            self._cond.notify_all()  # capacity may have dropped -> re-check waiters
+        return hosts
 
-    async def mark_reconciled(self, host: str) -> None:
-        async with self._cond:
-            self._pool.mark_reconciled(host)
-            self._cond.notify_all()
 
-    async def quarantined_hosts(self) -> list[str]:
-        async with self._cond:
-            return self._pool.quarantined_hosts()
+async def quarantine(self, host: str) -> None:
+    async with self._cond:
+        self._pool.quarantine(host)
+        self._cond.notify_all()
+
+
+async def mark_reconciled(self, host: str) -> None:
+    async with self._cond:
+        self._pool.mark_reconciled(host)
+        self._cond.notify_all()
+
+
+async def quarantined_hosts(self) -> list[str]:
+    async with self._cond:
+        return self._pool.quarantined_hosts()
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -642,25 +662,28 @@ from ray_dispatcher.scheduling import LeaseService
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
 def test_acquire_raises_immediately_when_no_capacity():
     async def scenario():
         svc = LeaseService({"a": 1}, now=Clock(), token_factory=_tokens())
-        await svc.acquire("x")        # consume the slot
-        await svc.quarantine("a")     # now zero healthy hosts
+        await svc.acquire("x")  # consume the slot
+        await svc.quarantine("a")  # now zero healthy hosts
         # wait_for so the pre-fix version (which would block on the condition)
         # fails cleanly with TimeoutError instead of hanging the whole run.
         with pytest.raises(NoHealthyHostsError):
@@ -672,11 +695,11 @@ def test_acquire_raises_immediately_when_no_capacity():
 def test_blocked_acquire_wakes_and_raises_when_last_host_lost():
     async def scenario():
         svc = LeaseService({"a": 1}, now=Clock(), token_factory=_tokens())
-        await svc.acquire("x")                       # full
+        await svc.acquire("x")  # full
         waiter = asyncio.create_task(svc.acquire("y"))
-        await asyncio.sleep(0.05)                     # waiter blocks (capacity remains)
+        await asyncio.sleep(0.05)  # waiter blocks (capacity remains)
         assert not waiter.done()
-        await svc.quarantine("a")                     # last host lost -> notify
+        await svc.quarantine("a")  # last host lost -> notify
         with pytest.raises(NoHealthyHostsError):
             await asyncio.wait_for(waiter, timeout=1.0)
 

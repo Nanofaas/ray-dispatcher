@@ -227,8 +227,7 @@ from ray_dispatcher.models import Project
 def _project(tmp_path: Path, **over) -> Project:
     (tmp_path / "pyproject.toml").write_text("[project]\nname='x'\n")
     (tmp_path / "uv.lock").write_text("# lock v1\n")
-    kwargs = dict(path=str(tmp_path), project_id="x", python="3.10.18",
-                  uv_version="0.11.25")
+    kwargs = dict(path=str(tmp_path), project_id="x", python="3.10.18", uv_version="0.11.25")
     kwargs.update(over)
     return Project(**kwargs)
 
@@ -240,10 +239,13 @@ def test_env_digest_stable(tmp_path):
     assert a == b and len(a) == 64
 
 
-@pytest.mark.parametrize("mutate", [
-    lambda tmp, p: (tmp / "uv.lock").write_text("# lock v2\n") or p,
-    lambda tmp, p: (tmp / "pyproject.toml").write_text("[project]\nname='y'\n") or p,
-])
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda tmp, p: (tmp / "uv.lock").write_text("# lock v2\n") or p,
+        lambda tmp, p: (tmp / "pyproject.toml").write_text("[project]\nname='y'\n") or p,
+    ],
+)
 def test_env_digest_changes_on_file_change(tmp_path, mutate):
     p = _project(tmp_path)
     before = environment_digest(p, platform="linux-x86_64", sync_flags=("--locked",))
@@ -278,9 +280,7 @@ from .models import Project
 Append to `digests.py`:
 
 ```python
-def environment_digest(
-    project: Project, *, platform: str, sync_flags: Sequence[str]
-) -> str:
+def environment_digest(project: Project, *, platform: str, sync_flags: Sequence[str]) -> str:
     base = Path(project.path)
     h = hashlib.sha256()
     for fname in ("pyproject.toml", "uv.lock"):
@@ -416,6 +416,7 @@ def test_payload_contains_session_and_heartbeat():
     t = FakeTransport()
     lock = SessionLock(t, "sess-9", now=lambda: 1234.5)
     import json
+
     payload = json.loads(lock._payload())
     assert payload == {"session_id": "sess-9", "heartbeat": 1234.5}
 ```
@@ -504,9 +505,7 @@ class SessionLock:
         if self.now() - float(existing.get("heartbeat", 0)) > self.ttl_s:
             self._write_owner()  # stale: heartbeat expired -> take over
             return
-        raise HostInUseError(
-            f"session lock held by {existing.get('session_id')!r}"
-        )
+        raise HostInUseError(f"session lock held by {existing.get('session_id')!r}")
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -567,8 +566,7 @@ def _scripts(t):
 
 
 def test_live_lock_from_other_session_raises():
-    t = FakeTransport(_responder(create_rc=1,
-                                 owner={"session_id": "other", "heartbeat": 1000.0}))
+    t = FakeTransport(_responder(create_rc=1, owner={"session_id": "other", "heartbeat": 1000.0}))
     lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)  # age 0 < ttl
     with pytest.raises(HostInUseError):
         lock.acquire()
@@ -576,16 +574,14 @@ def test_live_lock_from_other_session_raises():
 
 
 def test_stale_lock_is_taken_over():
-    t = FakeTransport(_responder(create_rc=1,
-                                 owner={"session_id": "other", "heartbeat": 900.0}))
+    t = FakeTransport(_responder(create_rc=1, owner={"session_id": "other", "heartbeat": 900.0}))
     lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)  # age 100 > ttl
     lock.acquire()  # no raise
     assert any("mv -f" in s for s in _scripts(t))  # took it over
 
 
 def test_own_lock_is_refreshed():
-    t = FakeTransport(_responder(create_rc=1,
-                                 owner={"session_id": "mine", "heartbeat": 1000.0}))
+    t = FakeTransport(_responder(create_rc=1, owner={"session_id": "mine", "heartbeat": 1000.0}))
     lock = SessionLock(t, "mine", ttl_s=60.0, now=lambda: 1000.0)
     lock.acquire()  # no raise
     assert any("mv -f" in s for s in _scripts(t))
@@ -673,15 +669,16 @@ Expected: FAIL with `AttributeError: 'SessionLock' object has no attribute 'hear
 - [ ] **Step 3: Write the implementation (append two methods to `SessionLock`)**
 
 ```python
-    def heartbeat(self) -> None:
-        existing = self._read_owner()
-        if existing is not None and existing.get("session_id") == self.session_id:
-            self._write_owner()
+def heartbeat(self) -> None:
+    existing = self._read_owner()
+    if existing is not None and existing.get("session_id") == self.session_id:
+        self._write_owner()
 
-    def release(self) -> None:
-        existing = self._read_owner()
-        if existing is not None and existing.get("session_id") == self.session_id:
-            self.transport.run(_sh(f"rm -f {_LOCK_FILE}"))
+
+def release(self) -> None:
+    existing = self._read_owner()
+    if existing is not None and existing.get("session_id") == self.session_id:
+        self.transport.run(_sh(f"rm -f {_LOCK_FILE}"))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**

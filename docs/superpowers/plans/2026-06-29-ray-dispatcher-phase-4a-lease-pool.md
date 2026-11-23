@@ -57,10 +57,13 @@ src/ray_dispatcher/
 ```python
 class Clock:
     """Deterministic injectable clock."""
+
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
@@ -68,11 +71,13 @@ class Clock:
 def _tokens():
     """Deterministic token factory: tok0, tok1, ..."""
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 ```
 
@@ -100,8 +105,14 @@ from ray_dispatcher.scheduling import Lease
 
 
 def test_lease_holds_all_fields():
-    lease = Lease(token="t", host="ubuntu@a:22", slot=0, attempt_id="b/j/1",
-                  expiry_s=1060.0, heartbeat_s=1000.0)
+    lease = Lease(
+        token="t",
+        host="ubuntu@a:22",
+        slot=0,
+        attempt_id="b/j/1",
+        expiry_s=1060.0,
+        heartbeat_s=1000.0,
+    )
     assert lease.token == "t"
     assert lease.host == "ubuntu@a:22"
     assert lease.slot == 0
@@ -115,12 +126,15 @@ def test_lease_is_frozen():
         lease.token = "other"  # type: ignore[misc]
 
 
-@pytest.mark.parametrize("kw", [
-    {"token": ""},
-    {"host": ""},
-    {"attempt_id": ""},
-    {"slot": -1},
-])
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"token": ""},
+        {"host": ""},
+        {"attempt_id": ""},
+        {"slot": -1},
+    ],
+)
 def test_lease_rejects_invalid(kw):
     base = dict(token="t", host="a", slot=0, attempt_id="x", expiry_s=1.0, heartbeat_s=0.0)
     base.update(kw)
@@ -214,19 +228,23 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -418,17 +436,20 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -442,7 +463,7 @@ def test_waits_rather_than_reuse_while_untried_host_exists():
     # Fill 'b' (the only non-excluded host), leave 'a' free but excluded.
     # 'b' is still untried-but-full, so the retry must wait (None), not reuse 'a'.
     pool = LeasePool({"a": 1, "b": 1}, now=Clock(), token_factory=_tokens())
-    b_lease = pool.acquire("on_b", exclude=["a"])   # picks 'b' ('a' excluded)
+    b_lease = pool.acquire("on_b", exclude=["a"])  # picks 'b' ('a' excluded)
     assert b_lease.host == "b"
     # now 'b' is full, 'a' is free but excluded and still untried -> wait (None)
     assert pool.acquire("retry", exclude=["a"]) is None
@@ -493,17 +514,20 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -581,19 +605,23 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -673,17 +701,20 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
@@ -723,27 +754,31 @@ from ray_dispatcher.scheduling import LeasePool
 class Clock:
     def __init__(self, t: float = 1000.0) -> None:
         self.t = t
+
     def __call__(self) -> float:
         return self.t
+
     def advance(self, d: float) -> None:
         self.t += d
 
 
 def _tokens():
     n = 0
+
     def factory() -> str:
         nonlocal n
         t = f"tok{n}"
         n += 1
         return t
+
     return factory
 
 
 def test_sweep_quarantines_expired_lease_host():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1, "b": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
-    pool.acquire("x")           # on 'a' or 'b'; both have 1 slot -> 'a' (sorted/most-free tie)
-    clock.advance(100.0)        # past expiry 1060
+    pool.acquire("x")  # on 'a' or 'b'; both have 1 slot -> 'a' (sorted/most-free tie)
+    clock.advance(100.0)  # past expiry 1060
     affected = pool.sweep_expired()
     assert len(affected) == 1
     assert affected[0] in ("a", "b")
@@ -755,7 +790,7 @@ def test_sweep_keeps_live_leases():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
     pool.acquire("x")
-    clock.advance(30.0)         # not yet expired (deadline 1060)
+    clock.advance(30.0)  # not yet expired (deadline 1060)
     assert pool.sweep_expired() == []
     assert pool.healthy_host_count() == 1
 
@@ -765,8 +800,8 @@ def test_sweep_quarantine_invalidates_sibling_leases():
     pool = LeasePool({"a": 2}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
     l1 = pool.acquire("x")
     clock.advance(30.0)
-    l2 = pool.acquire("y")      # heartbeat 1030, deadline 1090
-    clock.advance(40.0)         # now 1070: l1 (1060) expired, l2 (1090) not — same host
+    l2 = pool.acquire("y")  # heartbeat 1030, deadline 1090
+    clock.advance(40.0)  # now 1070: l1 (1060) expired, l2 (1090) not — same host
     affected = pool.sweep_expired()
     assert affected == ["a"]
     # the whole host was quarantined, so BOTH leases are gone
@@ -778,19 +813,19 @@ def test_sweep_quarantine_invalidates_sibling_leases():
 def test_heartbeat_keeps_lease_alive_past_old_deadline():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
-    lease = pool.acquire("x")        # deadline 1060
-    clock.advance(30.0)              # now 1030
-    assert pool.heartbeat(lease.token) is True   # new deadline 1090
-    clock.advance(45.0)              # now 1075: past old 1060, before new 1090
-    assert pool.sweep_expired() == []            # heartbeat kept it alive
+    lease = pool.acquire("x")  # deadline 1060
+    clock.advance(30.0)  # now 1030
+    assert pool.heartbeat(lease.token) is True  # new deadline 1090
+    clock.advance(45.0)  # now 1075: past old 1060, before new 1090
+    assert pool.sweep_expired() == []  # heartbeat kept it alive
 
 
 def test_heartbeat_after_expiry_does_not_resurrect():
     clock = Clock(1000.0)
     pool = LeasePool({"a": 1}, lease_ttl_s=60.0, now=clock, token_factory=_tokens())
     lease = pool.acquire("x")
-    clock.advance(100.0)             # past expiry 1060
-    pool.sweep_expired()             # lease gone, host quarantined
+    clock.advance(100.0)  # past expiry 1060
+    pool.sweep_expired()  # lease gone, host quarantined
     assert pool.heartbeat(lease.token) is False
 ```
 
@@ -802,21 +837,23 @@ Expected: FAIL with `AttributeError: ... 'quarantine'` / `'sweep_expired'`.
 - [ ] **Step 3: Write the implementation (append to `LeasePool`)**
 
 ```python
-    def quarantine(self, host: str) -> None:
-        self._quarantined.add(host)
-        for token in [t for t, ls in self._leases.items() if ls.host == host]:
-            lease = self._leases.pop(token)
-            self._used[lease.host].discard(lease.slot)
+def quarantine(self, host: str) -> None:
+    self._quarantined.add(host)
+    for token in [t for t, ls in self._leases.items() if ls.host == host]:
+        lease = self._leases.pop(token)
+        self._used[lease.host].discard(lease.slot)
 
-    def mark_reconciled(self, host: str) -> None:
-        self._quarantined.discard(host)
 
-    def sweep_expired(self) -> list[str]:
-        now = self._now()
-        affected = {ls.host for ls in self._leases.values() if ls.expiry_s < now}
-        for host in affected:
-            self.quarantine(host)
-        return sorted(affected)
+def mark_reconciled(self, host: str) -> None:
+    self._quarantined.discard(host)
+
+
+def sweep_expired(self) -> list[str]:
+    now = self._now()
+    affected = {ls.host for ls in self._leases.values() if ls.expiry_s < now}
+    for host in affected:
+        self.quarantine(host)
+    return sorted(affected)
 ```
 
 - [ ] **Step 4: Run the quarantine + sweep tests to verify they pass**

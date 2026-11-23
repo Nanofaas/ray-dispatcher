@@ -404,35 +404,39 @@ def _home_transport(host):
         if 'printf %s "$HOME"' in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
 def _canned_outcome(*host_names):
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})  # no live locks in this test
 
 
 def test_setup_starts_runtime_with_vm_slot_sum_and_builds_runtimes(monkeypatch):
-    inv = Inventory((
-        RemoteHost("10.0.0.1", user="ubuntu", slots=2),
-        RemoteHost("10.0.0.2", user="ubuntu", slots=3),
-    ))
-    monkeypatch.setattr(ssh_ray, "provision",
-                        lambda *a, **k: _canned_outcome("10.0.0.1", "10.0.0.2"))
+    inv = Inventory(
+        (
+            RemoteHost("10.0.0.1", user="ubuntu", slots=2),
+            RemoteHost("10.0.0.2", user="ubuntu", slots=3),
+        )
+    )
+    monkeypatch.setattr(
+        ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1", "10.0.0.2")
+    )
     backend = SshRayBackend(transport_factory=_home_transport)
     try:
         report = backend.setup(inv, _project())
         assert all(h.succeeded for h in report.hosts)
         assert ray.is_initialized()
-        assert ray.cluster_resources().get("vm_slot") == 5.0   # 2 + 3 (§3.2.2)
+        assert ray.cluster_resources().get("vm_slot") == 5.0  # 2 + 3 (§3.2.2)
         assert set(backend._runtimes) == {"10.0.0.1", "10.0.0.2"}
         rt = backend._runtimes["10.0.0.1"]
         assert rt.layout.source == "/home/ubuntu/.ray_dispatcher/projects/dfaas/source"
         assert rt.environment_digest == "env123" and rt.runner_digest
     finally:
-        backend._teardown_runtime_for_test()   # real teardown() arrives in Task 5
+        backend._teardown_runtime_for_test()  # real teardown() arrives in Task 5
 
 
 def test_setup_propagates_no_healthy_hosts_without_starting_ray(monkeypatch):
@@ -443,7 +447,7 @@ def test_setup_propagates_no_healthy_hosts_without_starting_ray(monkeypatch):
     backend = SshRayBackend(transport_factory=_home_transport)
     with pytest.raises(NoHealthyHostsError):
         backend.setup(Inventory((RemoteHost("10.0.0.9", user="ubuntu"),)), _project())
-    assert not ray.is_initialized()   # Ray never started when provisioning yields no host
+    assert not ray.is_initialized()  # Ray never started when provisioning yields no host
 ```
 
 `_teardown_runtime_for_test` is a tiny test-only release helper added in this task's Step 3 (the real `teardown()` lands in Task 5, which deletes the helper and switches this `finally` to `backend.teardown()`). The `test_setup_propagates...` case never starts Ray, so it needs no cleanup.
@@ -458,66 +462,70 @@ Expected: FAIL with `NotImplementedError` (from the Task 3 stub) on the first te
 Replace the `setup` body (the `if ray.is_initialized(): ...` guard stays first) and add the helpers. Add `import secrets` to the stdlib import group (before `import ray` — ruff orders plain `import` stdlib before third-party). Add `provision` to the provisioning import line: `from ..provisioning import ProvisioningOutcome, RemoteLayout, _default_transport, provision`.
 
 ```python
-    def setup(self, inventory: Inventory, project: Project) -> ProvisioningReport:
-        if ray.is_initialized():
-            raise RayRuntimeConflictError(
-                "a Ray runtime is already initialized; ray_dispatcher owns its own "
-                "local runtime and will not attach to an external one (§3.2)"
-            )
-        # Provision first; provision() raises NoHealthyHostsError if none succeed,
-        # so Ray is never started for an empty healthy set (§3.2.2).
-        outcome = provision(
-            inventory, project,
-            runner_path=self._runner_path, transport_factory=self._transport_factory,
-            min_disk_mb=self._min_disk_mb,
+def setup(self, inventory: Inventory, project: Project) -> ProvisioningReport:
+    if ray.is_initialized():
+        raise RayRuntimeConflictError(
+            "a Ray runtime is already initialized; ray_dispatcher owns its own "
+            "local runtime and will not attach to an external one (§3.2)"
         )
-        self._outcome = outcome
-        runner_dig = runner_digest(self._runner_path)
-        healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
-        inv_slots = {h.host: h.slots for h in inventory.hosts}
-        slots = {name: inv_slots[name] for name in healthy}  # healthy host -> its slots
-        self._runtimes = {
-            host_name: self._build_runtime(inventory, project, result, runner_dig)
-            for host_name, result in healthy.items()
-        }
-        ray.init(
-            address="local",
-            namespace=f"ray-dispatcher-{secrets.token_hex(8)}",  # unique per session (§3.2.2)
-            resources={"vm_slot": float(sum(slots.values()))},
-        )
-        self._owns_runtime = True
-        self._actor = HostLease.remote(slots)
-        return outcome.report
+    # Provision first; provision() raises NoHealthyHostsError if none succeed,
+    # so Ray is never started for an empty healthy set (§3.2.2).
+    outcome = provision(
+        inventory,
+        project,
+        runner_path=self._runner_path,
+        transport_factory=self._transport_factory,
+        min_disk_mb=self._min_disk_mb,
+    )
+    self._outcome = outcome
+    runner_dig = runner_digest(self._runner_path)
+    healthy = {h.host: h for h in outcome.report.hosts if h.succeeded}
+    inv_slots = {h.host: h.slots for h in inventory.hosts}
+    slots = {name: inv_slots[name] for name in healthy}  # healthy host -> its slots
+    self._runtimes = {
+        host_name: self._build_runtime(inventory, project, result, runner_dig)
+        for host_name, result in healthy.items()
+    }
+    ray.init(
+        address="local",
+        namespace=f"ray-dispatcher-{secrets.token_hex(8)}",  # unique per session (§3.2.2)
+        resources={"vm_slot": float(sum(slots.values()))},
+    )
+    self._owns_runtime = True
+    self._actor = HostLease.remote(slots)
+    return outcome.report
 
-    def _build_runtime(
-        self, inventory: Inventory, project: Project, result: object, runner_dig: str
-    ) -> HostRuntime:
-        host_name = result.host  # type: ignore[attr-defined]
-        host = next(h for h in inventory.hosts if h.host == host_name)
-        transport = self._transport_factory(host)
-        home = transport.run(["sh", "-c", 'printf %s "$HOME"']).stdout.strip()
-        layout = RemoteLayout(home, project.project_id)
-        env_dig = result.environment_digest  # type: ignore[attr-defined]
-        assert env_dig is not None  # healthy hosts always have an environment digest
-        return HostRuntime(
-            host=host_name,
-            layout=layout,
-            environment_digest=env_dig,
-            runner_digest=runner_dig,
-            project_path=project.path,
-            secret_env=secret_env_map(project, layout),
-        )
 
-    def _teardown_runtime_for_test(self) -> None:
-        """Minimal runtime release for tests written before Task 5's teardown."""
-        if self._actor is not None:
-            ray.kill(self._actor)
-            self._actor = None
-        if self._outcome is not None:
-            self._outcome.release_all()
-        if self._owns_runtime:
-            ray.shutdown()
-            self._owns_runtime = False
+def _build_runtime(
+    self, inventory: Inventory, project: Project, result: object, runner_dig: str
+) -> HostRuntime:
+    host_name = result.host  # type: ignore[attr-defined]
+    host = next(h for h in inventory.hosts if h.host == host_name)
+    transport = self._transport_factory(host)
+    home = transport.run(["sh", "-c", 'printf %s "$HOME"']).stdout.strip()
+    layout = RemoteLayout(home, project.project_id)
+    env_dig = result.environment_digest  # type: ignore[attr-defined]
+    assert env_dig is not None  # healthy hosts always have an environment digest
+    return HostRuntime(
+        host=host_name,
+        layout=layout,
+        environment_digest=env_dig,
+        runner_digest=runner_dig,
+        project_path=project.path,
+        secret_env=secret_env_map(project, layout),
+    )
+
+
+def _teardown_runtime_for_test(self) -> None:
+    """Minimal runtime release for tests written before Task 5's teardown."""
+    if self._actor is not None:
+        ray.kill(self._actor)
+        self._actor = None
+    if self._outcome is not None:
+        self._outcome.release_all()
+    if self._owns_runtime:
+        ray.shutdown()
+        self._owns_runtime = False
 ```
 
 (Note: `_build_runtime` takes `result` as `object` with two `# type: ignore[attr-defined]` accesses to avoid importing `HostProvisioningResult` solely for typing; if you prefer, import `HostProvisioningResult` from `..models` and type `result: HostProvisioningResult` and drop the ignores — either is acceptable as long as mypy passes.)
@@ -575,6 +583,7 @@ def _home_transport(host):
         if 'printf %s "$HOME"' in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -604,15 +613,14 @@ def _canned_outcome(host_name, session):
 def test_teardown_shuts_down_owned_runtime_and_releases_locks(monkeypatch):
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
     rec = _Recorder()
-    monkeypatch.setattr(ssh_ray, "provision",
-                        lambda *a, **k: _canned_outcome("10.0.0.1", rec))
+    monkeypatch.setattr(ssh_ray, "provision", lambda *a, **k: _canned_outcome("10.0.0.1", rec))
     backend = SshRayBackend(transport_factory=_home_transport)
     backend.setup(inv, _project())
     assert ray.is_initialized()
     backend.teardown()
-    assert not ray.is_initialized()         # owned runtime shut down (§10.5)
+    assert not ray.is_initialized()  # owned runtime shut down (§10.5)
     assert rec.calls == ["stop", "release"]  # release_all() ran: hb stopped, lock released (§10.4)
-    assert backend._outcome.sessions == {}   # sessions cleared
+    assert backend._outcome.sessions == {}  # sessions cleared
 
 
 def test_teardown_is_safe_without_setup():

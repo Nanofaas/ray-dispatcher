@@ -328,8 +328,9 @@ from ray_dispatcher.ssh import SshConfig, build_rsync_argv
 
 
 def _cfg():
-    return SshConfig(host="h", user="u", port=2222,
-                     identity_file="/keys/id", known_hosts_file="/keys/kh")
+    return SshConfig(
+        host="h", user="u", port=2222, identity_file="/keys/id", known_hosts_file="/keys/kh"
+    )
 
 
 def test_argv_has_archive_and_ssh_options():
@@ -356,8 +357,7 @@ def test_argv_delete_and_excludes():
 
 
 def test_argv_no_identity_omits_i():
-    cfg = SshConfig(host="h", user="u", port=22, identity_file=None,
-                    known_hosts_file="/kh")
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file="/kh")
     joined = " ".join(build_rsync_argv(cfg, "/a", "/b", delete=False, excludes=()))
     assert "-i " not in joined
 ```
@@ -383,9 +383,12 @@ def _ssh_e_option(cfg: SshConfig) -> str:
     as Fabric. shlex.join keeps paths with spaces safe."""
     parts = [
         "ssh",
-        "-p", str(cfg.port),
-        "-o", f"UserKnownHostsFile={cfg.known_hosts_file}",
-        "-o", "StrictHostKeyChecking=yes",
+        "-p",
+        str(cfg.port),
+        "-o",
+        f"UserKnownHostsFile={cfg.known_hosts_file}",
+        "-o",
+        "StrictHostKeyChecking=yes",
     ]
     if cfg.identity_file:
         parts += ["-i", cfg.identity_file]
@@ -444,8 +447,7 @@ from ray_dispatcher.ssh import SshConfig, SshTransport, TransportError
 
 
 def _cfg():
-    return SshConfig(host="h", user="u", port=22, identity_file=None,
-                     known_hosts_file="/kh")
+    return SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file="/kh")
 
 
 def test_push_builds_remote_dst_and_runs_rsync(monkeypatch):
@@ -464,9 +466,11 @@ def test_push_builds_remote_dst_and_runs_rsync(monkeypatch):
 
 def test_pull_builds_remote_src(monkeypatch):
     seen = {}
-    monkeypatch.setattr(ssh.subprocess, "run",
-                        lambda argv, **kw: seen.update(argv=argv) or
-                        subprocess.CompletedProcess(argv, 0, "", ""))
+    monkeypatch.setattr(
+        ssh.subprocess,
+        "run",
+        lambda argv, **kw: seen.update(argv=argv) or subprocess.CompletedProcess(argv, 0, "", ""),
+    )
     SshTransport(_cfg()).pull("/remote/out", "/local/out")
     assert seen["argv"][-2:] == ["u@h:/remote/out", "/local/out"]
 
@@ -574,8 +578,13 @@ from ray_dispatcher.ssh import SshConfig, build_connection
 def test_build_connection_sets_host_user_port_and_identity(tmp_path):
     kh = tmp_path / "known_hosts"
     kh.write_text("")
-    cfg = SshConfig(host="10.0.0.5", user="ubuntu", port=2222,
-                    identity_file="/keys/id", known_hosts_file=str(kh))
+    cfg = SshConfig(
+        host="10.0.0.5",
+        user="ubuntu",
+        port=2222,
+        identity_file="/keys/id",
+        known_hosts_file=str(kh),
+    )
     conn = build_connection(cfg)
     assert conn.host == "10.0.0.5"
     assert conn.user == "ubuntu"
@@ -588,8 +597,7 @@ def test_build_connection_sets_host_user_port_and_identity(tmp_path):
 def test_build_connection_without_identity_uses_agent(tmp_path):
     kh = tmp_path / "known_hosts"
     kh.write_text("")
-    cfg = SshConfig(host="h", user="u", port=22, identity_file=None,
-                    known_hosts_file=str(kh))
+    cfg = SshConfig(host="h", user="u", port=22, identity_file=None, known_hosts_file=str(kh))
     conn = build_connection(cfg)
     assert "key_filename" not in conn.connect_kwargs
 ```
@@ -630,23 +638,21 @@ def build_connection(cfg: SshConfig) -> fabric.Connection:
 Add a `run` method to the `SshTransport` class (place it above `_rsync`):
 
 ```python
-    def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult:
-        if self._conn is None:
-            self._conn = build_connection(self.cfg)
-        command = shlex.join(argv)  # argv is library-controlled; never a user job string
-        start = time.monotonic()
-        try:
-            result = self._conn.run(
-                command, hide=True, warn=True, timeout=timeout_s, in_stream=False
-            )
-        except Exception as exc:  # noqa: BLE001 — uniform seam failure
-            raise TransportError(f"ssh run failed: {exc}") from exc
-        return CommandResult(
-            returncode=result.exited,
-            stdout=result.stdout,
-            stderr=result.stderr,
-            duration_s=time.monotonic() - start,
-        )
+def run(self, argv: Sequence[str], *, timeout_s: float | None = None) -> CommandResult:
+    if self._conn is None:
+        self._conn = build_connection(self.cfg)
+    command = shlex.join(argv)  # argv is library-controlled; never a user job string
+    start = time.monotonic()
+    try:
+        result = self._conn.run(command, hide=True, warn=True, timeout=timeout_s, in_stream=False)
+    except Exception as exc:  # noqa: BLE001 — uniform seam failure
+        raise TransportError(f"ssh run failed: {exc}") from exc
+    return CommandResult(
+        returncode=result.exited,
+        stdout=result.stdout,
+        stderr=result.stderr,
+        duration_s=time.monotonic() - start,
+    )
 ```
 
 (`self._conn` is typed `Any` (Task 4), so the lazy Fabric connection needs no
@@ -714,15 +720,17 @@ def _manifest(tmp_path, argv, env=None, secret_env=None):
 
 
 def _invoke(manifest_path):
-    return subprocess.run([sys.executable, RUNNER, manifest_path],
-                          capture_output=True, text=True)
+    return subprocess.run([sys.executable, RUNNER, manifest_path], capture_output=True, text=True)
 
 
 def test_runner_captures_output_and_returncode(tmp_path):
     m, path = _manifest(
         tmp_path,
-        [sys.executable, "-c", "import sys; sys.stdout.write('hi'); "
-                              "sys.stderr.write('warn'); sys.exit(3)"],
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.write('hi'); sys.stderr.write('warn'); sys.exit(3)",
+        ],
     )
     proc = _invoke(path)
     assert proc.returncode == 0  # runner managed the child successfully
@@ -738,10 +746,13 @@ def test_runner_captures_output_and_returncode(tmp_path):
 def test_runner_applies_venv_and_secret_env(tmp_path):
     m, path = _manifest(
         tmp_path,
-        [sys.executable, "-c",
-         "import os; open(os.environ['OUT'],'w').write("
-         "os.environ['PATH'].split(os.pathsep)[0] + '|' + "
-         "os.environ['VIRTUAL_ENV'] + '|' + os.environ['LIC'])"],
+        [
+            sys.executable,
+            "-c",
+            "import os; open(os.environ['OUT'],'w').write("
+            "os.environ['PATH'].split(os.pathsep)[0] + '|' + "
+            "os.environ['VIRTUAL_ENV'] + '|' + os.environ['LIC'])",
+        ],
         env={"OUT": str(tmp_path / "probe.txt")},
         secret_env={"LIC": "/remote/gurobi.lic"},
     )
@@ -889,10 +900,16 @@ RUNNER = str(Path("src/ray_dispatcher/remote_runner.py").resolve())
 
 def _manifest(tmp_path, argv):
     m = {
-        "argv": argv, "cwd": str(tmp_path), "env": {}, "secret_env": {},
-        "venv_bin": str(tmp_path / "v" / "bin"), "virtual_env": str(tmp_path / "v"),
-        "stdout_path": str(tmp_path / "out.log"), "stderr_path": str(tmp_path / "err.log"),
-        "pid_path": str(tmp_path / "pid.json"), "result_path": str(tmp_path / "result.json"),
+        "argv": argv,
+        "cwd": str(tmp_path),
+        "env": {},
+        "secret_env": {},
+        "venv_bin": str(tmp_path / "v" / "bin"),
+        "virtual_env": str(tmp_path / "v"),
+        "stdout_path": str(tmp_path / "out.log"),
+        "stderr_path": str(tmp_path / "err.log"),
+        "pid_path": str(tmp_path / "pid.json"),
+        "result_path": str(tmp_path / "result.json"),
     }
     p = tmp_path / "m.json"
     p.write_text(json.dumps(m))
@@ -900,17 +917,23 @@ def _manifest(tmp_path, argv):
 
 
 def test_child_output_is_forwarded_live_to_runner_streams(tmp_path):
-    m, path = _manifest(tmp_path, [sys.executable, "-c",
-                                   "import sys; print('forward-me'); "
-                                   "print('to-stderr', file=sys.stderr)"])
+    m, path = _manifest(
+        tmp_path,
+        [
+            sys.executable,
+            "-c",
+            "import sys; print('forward-me'); print('to-stderr', file=sys.stderr)",
+        ],
+    )
     proc = subprocess.run([sys.executable, RUNNER, path], capture_output=True, text=True)
     assert "forward-me" in proc.stdout
     assert "to-stderr" in proc.stderr
 
 
 def test_binary_output_preserved_in_file_and_forwarded_raw(tmp_path):
-    m, path = _manifest(tmp_path, [sys.executable, "-c",
-                                   "import sys; sys.stdout.buffer.write(b'\\xff\\xfe')"])
+    m, path = _manifest(
+        tmp_path, [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff\\xfe')"]
+    )
     proc = subprocess.run([sys.executable, RUNNER, path], capture_output=True)
     # raw bytes preserved on the VM-side file AND forwarded byte-for-byte
     assert Path(m["stdout_path"]).read_bytes() == b"\xff\xfe"
@@ -945,14 +968,10 @@ In `run(...)`, replace the two thread definitions with (note `.buffer` — the
 binary side of the runner's own stdout/stderr):
 
 ```python
-    threads = [
-        threading.Thread(
-            target=_tee, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)
-        ),
-        threading.Thread(
-            target=_tee, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)
-        ),
-    ]
+threads = [
+    threading.Thread(target=_tee, args=(proc.stdout, manifest["stdout_path"], sys.stdout.buffer)),
+    threading.Thread(target=_tee, args=(proc.stderr, manifest["stderr_path"], sys.stderr.buffer)),
+]
 ```
 
 - [ ] **Step 4: Run test to verify it passes**

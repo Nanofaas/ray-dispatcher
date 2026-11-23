@@ -365,24 +365,30 @@ from ray_dispatcher.errors import PathValidationError
 from ray_dispatcher.paths import ensure_within, normalize_relative
 
 
-@pytest.mark.parametrize("good,expected", [
-    ("a/b/c", "a/b/c"),
-    ("./a/./b", "a/b"),
-    (".", "."),
-    ("config_files/eval_smoke.json", "config_files/eval_smoke.json"),
-])
+@pytest.mark.parametrize(
+    "good,expected",
+    [
+        ("a/b/c", "a/b/c"),
+        ("./a/./b", "a/b"),
+        (".", "."),
+        ("config_files/eval_smoke.json", "config_files/eval_smoke.json"),
+    ],
+)
 def test_normalize_relative_accepts(good, expected):
     assert normalize_relative(good) == expected
 
 
-@pytest.mark.parametrize("bad", [
-    "",
-    "/etc/passwd",
-    "../escape",
-    "a/../../b",
-    "a/../b",          # any '..' component is rejected, even if it would collapse
-    "with\x00nul",
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "",
+        "/etc/passwd",
+        "../escape",
+        "a/../../b",
+        "a/../b",  # any '..' component is rejected, even if it would collapse
+        "with\x00nul",
+    ],
+)
 def test_normalize_relative_rejects(bad):
     with pytest.raises(PathValidationError):
         normalize_relative(bad)
@@ -501,14 +507,17 @@ def test_remotehost_valid_defaults():
     assert h.known_hosts_file == "~/.ssh/known_hosts"
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"host": "", "user": "ubuntu"},
-    {"host": "h", "user": ""},
-    {"host": "h", "user": "u", "slots": 0},
-    {"host": "h", "user": "u", "slots": -1},
-    {"host": "h", "user": "u", "port": 0},
-    {"host": "h", "user": "u", "port": 70000},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"host": "", "user": "ubuntu"},
+        {"host": "h", "user": ""},
+        {"host": "h", "user": "u", "slots": 0},
+        {"host": "h", "user": "u", "slots": -1},
+        {"host": "h", "user": "u", "port": 0},
+        {"host": "h", "user": "u", "port": 70000},
+    ],
+)
 def test_remotehost_rejects(kwargs):
     with pytest.raises(ModelValidationError):
         RemoteHost(**kwargs)
@@ -535,7 +544,8 @@ def test_inventory_allows_same_host_different_user():
 
 def test_inventory_from_yaml(tmp_path):
     p = tmp_path / "hosts.yaml"
-    p.write_text(textwrap.dedent("""
+    p.write_text(
+        textwrap.dedent("""
         hosts:
           - host: 10.0.0.11
             user: ubuntu
@@ -544,7 +554,8 @@ def test_inventory_from_yaml(tmp_path):
             user: ubuntu
             slots: 4
             port: 2222
-    """))
+    """)
+    )
     inv = Inventory.from_yaml(str(p))
     assert [h.host for h in inv.hosts] == ["10.0.0.11", "10.0.0.12"]
     assert inv.hosts[1].slots == 4
@@ -664,37 +675,46 @@ from ray_dispatcher.models import Project, SecretFile
 
 
 def test_secretfile_valid():
-    s = SecretFile(source="~/lic/gurobi.lic", remote_name="gurobi.lic",
-                   env_var="GRB_LICENSE_FILE")
+    s = SecretFile(source="~/lic/gurobi.lic", remote_name="gurobi.lic", env_var="GRB_LICENSE_FILE")
     assert s.mode == 0o600
 
 
-@pytest.mark.parametrize("kwargs", [
-    {"source": "", "remote_name": "x"},
-    {"source": "s", "remote_name": ""},
-    {"source": "s", "remote_name": "sub/x"},     # not a bare filename
-    {"source": "s", "remote_name": ".."},
-    {"source": "s", "remote_name": "x", "env_var": "1BAD"},
-])
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"source": "", "remote_name": "x"},
+        {"source": "s", "remote_name": ""},
+        {"source": "s", "remote_name": "sub/x"},  # not a bare filename
+        {"source": "s", "remote_name": ".."},
+        {"source": "s", "remote_name": "x", "env_var": "1BAD"},
+    ],
+)
 def test_secretfile_rejects(kwargs):
     with pytest.raises(ModelValidationError):
         SecretFile(**kwargs)
 
 
 def test_project_valid_defaults():
-    p = Project(path="../DFaasOptimizer", project_id="dfaas-optimizer",
-                python="3.10.18", uv_version="0.11.25")
+    p = Project(
+        path="../DFaasOptimizer",
+        project_id="dfaas-optimizer",
+        python="3.10.18",
+        uv_version="0.11.25",
+    )
     assert p.exclude == (".venv/", ".git/", "solutions/")
     assert p.secrets == ()
 
 
-@pytest.mark.parametrize("field,value", [
-    ("python", "3.10"),       # not exact X.Y.Z
-    ("python", "3.10.x"),
-    ("uv_version", "0.11"),
-    ("project_id", "bad id with spaces"),
-    ("path", ""),
-])
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("python", "3.10"),  # not exact X.Y.Z
+        ("python", "3.10.x"),
+        ("uv_version", "0.11"),
+        ("project_id", "bad id with spaces"),
+        ("path", ""),
+    ],
+)
 def test_project_rejects(field, value):
     base = dict(path="p", project_id="pid", python="3.10.18", uv_version="0.11.25")
     base[field] = value
@@ -706,8 +726,9 @@ def test_project_rejects_duplicate_secret_names():
     s1 = SecretFile(source="a", remote_name="dup")
     s2 = SecretFile(source="b", remote_name="dup")
     with pytest.raises(ModelValidationError):
-        Project(path="p", project_id="pid", python="3.10.18", uv_version="0.11.25",
-                secrets=(s1, s2))
+        Project(
+            path="p", project_id="pid", python="3.10.18", uv_version="0.11.25", secrets=(s1, s2)
+        )
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -763,9 +784,7 @@ class Project:
         if not _EXACT_VERSION_RE.match(self.python):
             raise ModelValidationError(f"python must be exact X.Y.Z, got {self.python!r}")
         if not _EXACT_VERSION_RE.match(self.uv_version):
-            raise ModelValidationError(
-                f"uv_version must be exact X.Y.Z, got {self.uv_version!r}"
-            )
+            raise ModelValidationError(f"uv_version must be exact X.Y.Z, got {self.uv_version!r}")
         names = [s.remote_name for s in self.secrets]
         if len(names) != len(set(names)):
             raise ModelValidationError("duplicate secret remote_name in project")
@@ -880,7 +899,7 @@ final stdlib/first-party ordering does not matter yet — Task 8 runs
 
 ```python
 from collections.abc import Mapping
-from dataclasses import dataclass, field   # field is newly added
+from dataclasses import dataclass, field  # field is newly added
 from .paths import normalize_relative
 ```
 
@@ -895,8 +914,8 @@ Append after `Project`:
 ```python
 @dataclass(frozen=True)
 class InputSpec:
-    source: str                       # absolute or Project.path-relative local path
-    destination: str                  # normalized run-root-relative POSIX path
+    source: str  # absolute or Project.path-relative local path
+    destination: str  # normalized run-root-relative POSIX path
 
     def __post_init__(self) -> None:
         if not self.source:
@@ -908,14 +927,12 @@ class InputSpec:
 
 @dataclass(frozen=True)
 class OutputSpec:
-    source: str                       # normalized run-root-relative POSIX path
-    destination: str | None = None    # relative to the job's local outputs dir
+    source: str  # normalized run-root-relative POSIX path
+    destination: str | None = None  # relative to the job's local outputs dir
     required: bool = True
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self, "source", normalize_relative(self.source, field="output source")
-        )
+        object.__setattr__(self, "source", normalize_relative(self.source, field="output source"))
         if self.destination is not None:
             object.__setattr__(
                 self,
@@ -996,13 +1013,23 @@ from ray_dispatcher.models import (
 
 def test_job_status_values():
     assert {s.value for s in JobStatus} == {
-        "pending", "running", "succeeded", "failed", "timed_out", "cancelled",
+        "pending",
+        "running",
+        "succeeded",
+        "failed",
+        "timed_out",
+        "cancelled",
     }
 
 
 def test_failure_kind_values():
     assert {k.value for k in FailureKind} == {
-        "command", "ssh", "timeout", "output_missing", "collection", "host_lost",
+        "command",
+        "ssh",
+        "timeout",
+        "output_missing",
+        "collection",
+        "host_lost",
         "internal",
     }
 
@@ -1027,18 +1054,31 @@ def test_job_handle_is_hashable():
 
 def test_result_objects_construct():
     attempt = AttemptResult(
-        number=1, host="h", status=JobStatus.SUCCEEDED, returncode=0,
-        duration_s=1.0, stdout_log="o", stderr_log="e",
+        number=1,
+        host="h",
+        status=JobStatus.SUCCEEDED,
+        returncode=0,
+        duration_s=1.0,
+        stdout_log="o",
+        stderr_log="e",
     )
     result = JobResult(
-        id="j", batch_id="b", status=JobStatus.SUCCEEDED, returncode=0,
-        duration_s=1.0, host="h", output_dir="./results/b/j/outputs",
+        id="j",
+        batch_id="b",
+        status=JobStatus.SUCCEEDED,
+        returncode=0,
+        duration_s=1.0,
+        host="h",
+        output_dir="./results/b/j/outputs",
         attempts=(attempt,),
     )
     assert result.attempts[0].failure_kind is None
     report = ProvisioningReport(
-        hosts=(HostProvisioningResult(host="h", succeeded=True,
-                                      source_digest="s", environment_digest="e"),)
+        hosts=(
+            HostProvisioningResult(
+                host="h", succeeded=True, source_digest="s", environment_digest="e"
+            ),
+        )
     )
     assert report.hosts[0].succeeded is True
 ```
@@ -1171,19 +1211,36 @@ import ray_dispatcher as rd
 
 def test_public_value_objects_importable():
     for name in [
-        "RemoteHost", "Inventory", "SecretFile", "Project",
-        "InputSpec", "OutputSpec", "Job",
-        "JobStatus", "FailureKind", "RetryPolicy", "JobHandle",
-        "AttemptResult", "JobResult", "HostProvisioningResult", "ProvisioningReport",
+        "RemoteHost",
+        "Inventory",
+        "SecretFile",
+        "Project",
+        "InputSpec",
+        "OutputSpec",
+        "Job",
+        "JobStatus",
+        "FailureKind",
+        "RetryPolicy",
+        "JobHandle",
+        "AttemptResult",
+        "JobResult",
+        "HostProvisioningResult",
+        "ProvisioningReport",
     ]:
         assert hasattr(rd, name), name
 
 
 def test_public_errors_importable():
     for name in [
-        "DispatcherError", "ConfigurationError", "ModelValidationError",
-        "PathValidationError", "RayRuntimeConflictError", "ProvisioningError",
-        "HostInUseError", "NoHealthyHostsError", "BatchExistsError",
+        "DispatcherError",
+        "ConfigurationError",
+        "ModelValidationError",
+        "PathValidationError",
+        "RayRuntimeConflictError",
+        "ProvisioningError",
+        "HostInUseError",
+        "NoHealthyHostsError",
+        "BatchExistsError",
         "BatchFailedError",
     ]:
         assert hasattr(rd, name), name

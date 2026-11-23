@@ -65,13 +65,15 @@ src/ray_dispatcher/
 ### Shared test helpers (define inline per test file, copy as needed)
 
 ```python
-def _runs(t):           # list of argv-tuples for run() calls
+def _runs(t):  # list of argv-tuples for run() calls
     return [c[1] for c in t.calls if c[0] == "run"]
 
-def _scripts(t):        # the sh -c script strings
+
+def _scripts(t):  # the sh -c script strings
     return [a[2] for a in _runs(t) if len(a) >= 3 and a[0] == "sh" and a[1] == "-c"]
 
-def _pushes(t):         # list of (local, remote, delete, excludes)
+
+def _pushes(t):  # list of (local, remote, delete, excludes)
     return [c[1] for c in t.calls if c[0] == "push"]
 ```
 
@@ -151,7 +153,9 @@ def test_checked_raises_step_error_on_nonzero():
 def test_write_remote_file_is_atomic_tmp_then_mv():
     t = FakeTransport()  # default rc 0
     p = HostProvisioner(t, _project(), _host(), runner_path="x", session_id="s")
-    p._write_remote_file("/home/ubuntu/.ray_dispatcher/projects/dfaas/source-manifest.json", '{"a":1}')
+    p._write_remote_file(
+        "/home/ubuntu/.ray_dispatcher/projects/dfaas/source-manifest.json", '{"a":1}'
+    )
     script = _runs(t)[-1][2]
     assert "printf %s" in script and "source-manifest.json.tmp" in script and "mv -f" in script
 ```
@@ -260,7 +264,11 @@ class HostProvisioner:
         qtmp, qpath = shlex.quote(tmp), shlex.quote(path)
         chmod = f" && chmod {mode:o} {qtmp}" if mode is not None else ""
         self._checked(
-            ["sh", "-c", f"printf %s {shlex.quote(content)} > {qtmp}{chmod} && mv -f {qtmp} {qpath}"],
+            [
+                "sh",
+                "-c",
+                f"printf %s {shlex.quote(content)} > {qtmp}{chmod} && mv -f {qtmp} {qpath}",
+            ],
             f"write {path}",
         )
 
@@ -318,7 +326,9 @@ def _prov(results, **kw):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s", **kw,
+        runner_path="x",
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -371,24 +381,22 @@ Expected: FAIL with `AttributeError: 'HostProvisioner' object has no attribute '
 - [ ] **Step 3: Write the implementation (append to `HostProvisioner`)**
 
 ```python
-    def _preflight(self) -> None:
-        for tool in ("python3", "rsync"):
-            if self.t.run(["command", "-v", tool]).returncode != 0:
-                raise _StepError(f"required tool {tool!r} missing on {self.host.host}")
-        root = shlex.quote(self._lo.root)
-        # df -Pk gives POSIX one-line-per-fs output; available 1024-blocks is column 4.
-        r = self._checked(
-            ["sh", "-c", f"mkdir -p {root} && df -Pk {root} | tail -1"], "disk check"
+def _preflight(self) -> None:
+    for tool in ("python3", "rsync"):
+        if self.t.run(["command", "-v", tool]).returncode != 0:
+            raise _StepError(f"required tool {tool!r} missing on {self.host.host}")
+    root = shlex.quote(self._lo.root)
+    # df -Pk gives POSIX one-line-per-fs output; available 1024-blocks is column 4.
+    r = self._checked(["sh", "-c", f"mkdir -p {root} && df -Pk {root} | tail -1"], "disk check")
+    try:
+        avail_kb = int(r.stdout.split()[3])
+    except (IndexError, ValueError) as exc:
+        raise _StepError(f"could not parse disk free on {self.host.host}: {r.stdout!r}") from exc
+    if avail_kb < self.min_disk_mb * 1024:
+        raise _StepError(
+            f"insufficient disk on {self.host.host}: "
+            f"{avail_kb // 1024} MB < {self.min_disk_mb} MB required"
         )
-        try:
-            avail_kb = int(r.stdout.split()[3])
-        except (IndexError, ValueError) as exc:
-            raise _StepError(f"could not parse disk free on {self.host.host}: {r.stdout!r}") from exc
-        if avail_kb < self.min_disk_mb * 1024:
-            raise _StepError(
-                f"insufficient disk on {self.host.host}: "
-                f"{avail_kb // 1024} MB < {self.min_disk_mb} MB required"
-            )
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -432,7 +440,9 @@ def _prov(results, **kw):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s", **kw,
+        runner_path="x",
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -568,7 +578,8 @@ def _prov(results):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s",
+        runner_path="x",
+        session_id="s",
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -614,20 +625,18 @@ Expected: FAIL with `AttributeError: ... '_install_python'`.
 - [ ] **Step 3: Write the implementation (append to `HostProvisioner`)**
 
 ```python
-    def _install_python(self, uv: str) -> None:
-        want = self.project.python
-        self._checked([uv, "python", "install", want], "uv python install")
-        interp = self._checked([uv, "python", "find", want], "uv python find").stdout.strip()
-        if not interp:
-            raise _StepError(f"uv could not locate Python {want} on {self.host.host}")
-        got = self._checked(
-            [interp, "-c", "import sys;print('.'.join(map(str,sys.version_info[:3])))"],
-            "python version check",
-        ).stdout.strip()
-        if got != want:
-            raise _StepError(
-                f"interpreter on {self.host.host} is {got!r}, expected {want!r}"
-            )
+def _install_python(self, uv: str) -> None:
+    want = self.project.python
+    self._checked([uv, "python", "install", want], "uv python install")
+    interp = self._checked([uv, "python", "find", want], "uv python find").stdout.strip()
+    if not interp:
+        raise _StepError(f"uv could not locate Python {want} on {self.host.host}")
+    got = self._checked(
+        [interp, "-c", "import sys;print('.'.join(map(str,sys.version_info[:3])))"],
+        "python version check",
+    ).stdout.strip()
+    if got != want:
+        raise _StepError(f"interpreter on {self.host.host} is {got!r}, expected {want!r}")
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -670,7 +679,8 @@ def _prov(tmp_path):
         FakeTransport(),  # default rc 0
         Project(path=str(tmp_path), project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s",
+        runner_path="x",
+        session_id="s",
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -723,30 +733,33 @@ from .digests import source_digest
 Append to `HostProvisioner`:
 
 ```python
-    def _sync_source(self) -> str:
-        staging = f"{self._lo.source}.staging"
-        self._checked(["sh", "-c", f"mkdir -p {shlex.quote(staging)}"], "source staging mkdir")
-        # trailing slashes: copy the *contents* of the local tree into staging.
-        self.t.push(
-            self.project.path.rstrip("/") + "/",
-            staging + "/",
-            delete=True,
-            excludes=self.project.exclude,
-        )
-        src = shlex.quote(self._lo.source)
-        stg = shlex.quote(staging)
-        old = shlex.quote(self._lo.source + ".old")
-        # The `mv staging source` rename is atomic within one parent dir; the brief
-        # window where source is absent is acceptable pre-runtime (no readers yet).
-        self._checked(
-            ["sh", "-c", f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; "
-                         f"mv {stg} {src}; rm -rf {old}"],
-            "source atomic replace",
-        )
-        digest = source_digest(self.project.path, self.project.exclude)
-        manifest = json.dumps({"source_digest": digest, "project_id": self.project.project_id})
-        self._write_remote_file(self._lo.source_manifest, manifest)
-        return digest
+def _sync_source(self) -> str:
+    staging = f"{self._lo.source}.staging"
+    self._checked(["sh", "-c", f"mkdir -p {shlex.quote(staging)}"], "source staging mkdir")
+    # trailing slashes: copy the *contents* of the local tree into staging.
+    self.t.push(
+        self.project.path.rstrip("/") + "/",
+        staging + "/",
+        delete=True,
+        excludes=self.project.exclude,
+    )
+    src = shlex.quote(self._lo.source)
+    stg = shlex.quote(staging)
+    old = shlex.quote(self._lo.source + ".old")
+    # The `mv staging source` rename is atomic within one parent dir; the brief
+    # window where source is absent is acceptable pre-runtime (no readers yet).
+    self._checked(
+        [
+            "sh",
+            "-c",
+            f"rm -rf {old}; if [ -e {src} ]; then mv {src} {old}; fi; mv {stg} {src}; rm -rf {old}",
+        ],
+        "source atomic replace",
+    )
+    digest = source_digest(self.project.path, self.project.exclude)
+    manifest = json.dumps({"source_digest": digest, "project_id": self.project.project_id})
+    self._write_remote_file(self._lo.source_manifest, manifest)
+    return digest
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -788,10 +801,17 @@ def _prov(tmp_path, results, *, groups=(), **kw):
     (tmp_path / "uv.lock").write_text("# lock\n")
     p = HostProvisioner(
         FakeTransport(run_results=results),
-        Project(path=str(tmp_path), project_id="dfaas", python="3.10.18",
-                uv_version="0.11.25", dependency_groups=groups),
+        Project(
+            path=str(tmp_path),
+            project_id="dfaas",
+            python="3.10.18",
+            uv_version="0.11.25",
+            dependency_groups=groups,
+        ),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path="x", session_id="s", **kw,
+        runner_path="x",
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -884,59 +904,69 @@ SYNC_FLAGS = (
 Append to `HostProvisioner`:
 
 ```python
-    def _publish_env(self, uv: str) -> str:
-        platform = self._checked(["uname", "-sm"], "platform probe").stdout.strip()
-        digest = environment_digest(self.project, platform=platform, sync_flags=SYNC_FLAGS)
-        env_dir = self._lo.env_dir(digest)
-        venv = self._lo.env_venv(digest)
-        manifest_path = self._lo.env_manifest(digest)
-        valid = self.t.run(
-            ["sh", "-c", f"test -f {shlex.quote(manifest_path)} && "
-                         f"test -x {shlex.quote(venv)}/bin/python"]
-        ).returncode == 0
-        if valid and not self.force:
-            return digest
+def _publish_env(self, uv: str) -> str:
+    platform = self._checked(["uname", "-sm"], "platform probe").stdout.strip()
+    digest = environment_digest(self.project, platform=platform, sync_flags=SYNC_FLAGS)
+    env_dir = self._lo.env_dir(digest)
+    venv = self._lo.env_venv(digest)
+    manifest_path = self._lo.env_manifest(digest)
+    valid = (
+        self.t.run(
+            [
+                "sh",
+                "-c",
+                f"test -f {shlex.quote(manifest_path)} && test -x {shlex.quote(venv)}/bin/python",
+            ]
+        ).returncode
+        == 0
+    )
+    if valid and not self.force:
+        return digest
 
-        staging = f"{env_dir}.staging"
-        staging_venv = f"{staging}/.venv"
-        self._checked(
-            ["sh", "-c", f"rm -rf {shlex.quote(staging)}; mkdir -p {shlex.quote(staging)}"],
-            "env staging mkdir",
-        )
-        sync = [uv, "sync", "--project", self._lo.source, *SYNC_FLAGS,
-                "--python", self.project.python]
-        for group in self.project.dependency_groups:
-            sync += ["--group", group]
-        self._checked(
-            ["sh", "-c",
-             f"UV_PROJECT_ENVIRONMENT={shlex.quote(staging_venv)} {shlex.join(sync)}"],
-            "uv sync",
-        )
-        # ponytail: venv relocatability after the atomic move is reconfirmed by the
-        #           Phase 7 e2e; bin/python is a symlink to the uv interpreter and
-        #           survives a move, console-script shebangs would not (jobs use python).
-        self._checked(
-            ["sh", "-c", f"{shlex.quote(staging_venv)}/bin/python -c 'import sys'"],
-            "venv smoke check",
-        )
-        manifest = json.dumps({
+    staging = f"{env_dir}.staging"
+    staging_venv = f"{staging}/.venv"
+    self._checked(
+        ["sh", "-c", f"rm -rf {shlex.quote(staging)}; mkdir -p {shlex.quote(staging)}"],
+        "env staging mkdir",
+    )
+    sync = [uv, "sync", "--project", self._lo.source, *SYNC_FLAGS, "--python", self.project.python]
+    for group in self.project.dependency_groups:
+        sync += ["--group", group]
+    self._checked(
+        ["sh", "-c", f"UV_PROJECT_ENVIRONMENT={shlex.quote(staging_venv)} {shlex.join(sync)}"],
+        "uv sync",
+    )
+    # ponytail: venv relocatability after the atomic move is reconfirmed by the
+    #           Phase 7 e2e; bin/python is a symlink to the uv interpreter and
+    #           survives a move, console-script shebangs would not (jobs use python).
+    self._checked(
+        ["sh", "-c", f"{shlex.quote(staging_venv)}/bin/python -c 'import sys'"],
+        "venv smoke check",
+    )
+    manifest = json.dumps(
+        {
             "environment_digest": digest,
             "python": self.project.python,
             "uv_version": self.project.uv_version,
             "platform": platform,
             "dependency_groups": list(self.project.dependency_groups),
             "sync_flags": list(SYNC_FLAGS),
-        })
-        self._write_remote_file(f"{staging}/environment-manifest.json", manifest)
-        qenv, qstg = shlex.quote(env_dir), shlex.quote(staging)
-        qold = shlex.quote(env_dir + ".old")
-        self._checked(
-            ["sh", "-c", f"mkdir -p {shlex.quote(self._lo.project)}/envs; rm -rf {qold}; "
-                         f"if [ -e {qenv} ]; then mv {qenv} {qold}; fi; "
-                         f"mv {qstg} {qenv}; rm -rf {qold}"],
-            "env atomic publish",
-        )
-        return digest
+        }
+    )
+    self._write_remote_file(f"{staging}/environment-manifest.json", manifest)
+    qenv, qstg = shlex.quote(env_dir), shlex.quote(staging)
+    qold = shlex.quote(env_dir + ".old")
+    self._checked(
+        [
+            "sh",
+            "-c",
+            f"mkdir -p {shlex.quote(self._lo.project)}/envs; rm -rf {qold}; "
+            f"if [ -e {qenv} ]; then mv {qenv} {qold}; fi; "
+            f"mv {qstg} {qenv}; rm -rf {qold}",
+        ],
+        "env atomic publish",
+    )
+    return digest
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -980,7 +1010,9 @@ def _prov(tmp_path, results, **kw):
         FakeTransport(run_results=results),
         Project(path="/local/proj", project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path=str(runner), session_id="s", **kw,
+        runner_path=str(runner),
+        session_id="s",
+        **kw,
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -1091,10 +1123,16 @@ from ray_dispatcher.ssh import CommandResult, FakeTransport
 def _prov(results, secrets, *, user="ubuntu"):
     p = HostProvisioner(
         FakeTransport(run_results=results),
-        Project(path="/local/proj", project_id="dfaas", python="3.10.18",
-                uv_version="0.11.25", secrets=secrets),
+        Project(
+            path="/local/proj",
+            project_id="dfaas",
+            python="3.10.18",
+            uv_version="0.11.25",
+            secrets=secrets,
+        ),
         RemoteHost(host="10.0.0.1", user=user),
-        runner_path="x", session_id="s",
+        runner_path="x",
+        session_id="s",
     )
     p.layout = RemoteLayout("/home/ubuntu", "dfaas")
     return p
@@ -1122,8 +1160,11 @@ def test_copy_secrets_pushes_chmods_and_verifies_owner():
     pushes = [c[1] for c in p.t.calls if c[0] == "push"]
     assert pushes[0][1] == "/home/ubuntu/.ray_dispatcher/secrets/dfaas/token"
     chmods = [c[1] for c in p.t.calls if c[0] == "run" and c[1][0] == "chmod"]
-    assert ("chmod", "600", "/home/ubuntu/.ray_dispatcher/secrets/dfaas/token") == \
-        (chmods[0][0], chmods[0][1], chmods[0][2])
+    assert ("chmod", "600", "/home/ubuntu/.ray_dispatcher/secrets/dfaas/token") == (
+        chmods[0][0],
+        chmods[0][1],
+        chmods[0][2],
+    )
     assert any("mkdir -p" in s and "chmod 700" in s for s in _scripts(p.t))  # 0700 dir
     # contents are never printed: no `cat`/`printf` of the secret file itself
     assert not any("cat /home/ubuntu/.ray_dispatcher/secrets" in s for s in _scripts(p.t))
@@ -1148,29 +1189,27 @@ Expected: FAIL with `AttributeError: ... '_copy_secrets'`.
 - [ ] **Step 3: Write the implementation (append to `HostProvisioner`)**
 
 ```python
-    def _copy_secrets(self) -> None:
-        if not self.project.secrets:
-            return
-        sdir = shlex.quote(self._lo.secrets)
-        self._checked(
-            ["sh", "-c", f"mkdir -p {sdir} && chmod 700 {sdir}"], "secrets dir"
-        )
-        for secret in self.project.secrets:
-            remote = f"{self._lo.secrets}/{secret.remote_name}"
-            self.t.push(secret.source, remote)
-            self._checked(["chmod", f"{secret.mode:o}", remote], f"chmod secret {secret.remote_name}")
-            # Owner check only — never reads the secret's contents (§6.3.8).
-            # GNU stat first, BSD/macOS stat as a dev fallback.
-            qr = shlex.quote(remote)
-            owner = self._checked(
-                ["sh", "-c", f"stat -c '%U' {qr} 2>/dev/null || stat -f '%Su' {qr}"],
-                f"verify secret {secret.remote_name}",
-            ).stdout.strip()
-            if owner and owner != self.host.user:
-                raise _StepError(
-                    f"secret {secret.remote_name!r} on {self.host.host} owned by "
-                    f"{owner!r}, expected {self.host.user!r}"
-                )
+def _copy_secrets(self) -> None:
+    if not self.project.secrets:
+        return
+    sdir = shlex.quote(self._lo.secrets)
+    self._checked(["sh", "-c", f"mkdir -p {sdir} && chmod 700 {sdir}"], "secrets dir")
+    for secret in self.project.secrets:
+        remote = f"{self._lo.secrets}/{secret.remote_name}"
+        self.t.push(secret.source, remote)
+        self._checked(["chmod", f"{secret.mode:o}", remote], f"chmod secret {secret.remote_name}")
+        # Owner check only — never reads the secret's contents (§6.3.8).
+        # GNU stat first, BSD/macOS stat as a dev fallback.
+        qr = shlex.quote(remote)
+        owner = self._checked(
+            ["sh", "-c", f"stat -c '%U' {qr} 2>/dev/null || stat -f '%Su' {qr}"],
+            f"verify secret {secret.remote_name}",
+        ).stdout.strip()
+        if owner and owner != self.host.user:
+            raise _StepError(
+                f"secret {secret.remote_name!r} on {self.host.host} owned by "
+                f"{owner!r}, expected {self.host.user!r}"
+            )
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -1247,7 +1286,9 @@ def _prov(tmp_path, results, runner_path):
         FakeTransport(run_results=results),
         Project(path=str(tmp_path), project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path=runner_path, session_id="sess-1", heartbeat_interval_s=1000.0,
+        runner_path=runner_path,
+        session_id="sess-1",
+        heartbeat_interval_s=1000.0,
     )
 
 
@@ -1303,7 +1344,8 @@ def test_provision_host_in_use_returns_failed_no_session(tmp_path):
         FakeTransport(run_results=held),
         Project(path=str(tmp_path), project_id="dfaas", python="3.10.18", uv_version="0.11.25"),
         RemoteHost(host="10.0.0.1", user="ubuntu"),
-        runner_path=str(runner), session_id="sess-1",
+        runner_path=str(runner),
+        session_id="sess-1",
     )
     result, session = p.provision()
     assert result.succeeded is False and session is None
@@ -1438,7 +1480,9 @@ def _runner(tmp_path):
 def test_provision_all_healthy_keeps_sessions(tmp_path):
     inv = Inventory((RemoteHost(host="a", user="ubuntu"), RemoteHost(host="b", user="ubuntu")))
     outcome = provision(
-        inv, _project(tmp_path), runner_path=_runner(tmp_path),
+        inv,
+        _project(tmp_path),
+        runner_path=_runner(tmp_path),
         transport_factory=lambda h: FakeTransport(run_results=_ok),
     )
     assert isinstance(outcome, ProvisioningOutcome)
@@ -1455,8 +1499,9 @@ def test_provision_partial_failure_proceeds_with_healthy(tmp_path):
     def factory(h):
         return FakeTransport(run_results=_ok if h.host == "good" else _fail)
 
-    outcome = provision(inv, _project(tmp_path), runner_path=_runner(tmp_path),
-                        transport_factory=factory)
+    outcome = provision(
+        inv, _project(tmp_path), runner_path=_runner(tmp_path), transport_factory=factory
+    )
     by_host = {r.host: r for r in outcome.report.hosts}
     assert by_host["good"].succeeded and not by_host["bad"].succeeded
     assert set(outcome.sessions) == {"ubuntu@good:22"}  # only the healthy host kept
@@ -1470,8 +1515,13 @@ def test_require_all_hosts_aborts_and_releases(tmp_path):
         return FakeTransport(run_results=_ok if h.host == "good" else _fail)
 
     with pytest.raises(ProvisioningError) as ei:
-        provision(inv, _project(tmp_path), runner_path=_runner(tmp_path),
-                  transport_factory=factory, require_all_hosts=True)
+        provision(
+            inv,
+            _project(tmp_path),
+            runner_path=_runner(tmp_path),
+            transport_factory=factory,
+            require_all_hosts=True,
+        )
     assert ei.value.report is not None
     assert len(ei.value.report.hosts) == 2  # complete report collected before abort
 
@@ -1479,8 +1529,12 @@ def test_require_all_hosts_aborts_and_releases(tmp_path):
 def test_no_healthy_hosts_raises(tmp_path):
     inv = Inventory((RemoteHost(host="bad", user="ubuntu"),))
     with pytest.raises(NoHealthyHostsError):
-        provision(inv, _project(tmp_path), runner_path=_runner(tmp_path),
-                  transport_factory=lambda h: FakeTransport(run_results=_fail))
+        provision(
+            inv,
+            _project(tmp_path),
+            runner_path=_runner(tmp_path),
+            transport_factory=lambda h: FakeTransport(run_results=_fail),
+        )
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -1544,16 +1598,23 @@ def provision(
     factory = transport_factory or _default_transport
     sid = session_id or _secrets.token_hex(16)
 
-    def work(host: RemoteHost) -> tuple[
-        HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None
-    ]:
+    def work(
+        host: RemoteHost,
+    ) -> tuple[HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None]:
         prov = HostProvisioner(
-            factory(host), project, host,
-            runner_path=runner_path, session_id=sid, force=force, min_disk_mb=min_disk_mb,
+            factory(host),
+            project,
+            host,
+            runner_path=runner_path,
+            session_id=sid,
+            force=force,
+            min_disk_mb=min_disk_mb,
         )
         return prov.provision()
 
-    results: dict[str, tuple[HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None]] = {}
+    results: dict[
+        str, tuple[HostProvisioningResult, tuple[SessionLock, HeartbeatThread] | None]
+    ] = {}
     with ThreadPoolExecutor(max_workers=len(inventory.hosts)) as pool:
         futures = {pool.submit(work, h): h for h in inventory.hosts}
         for fut in futures:

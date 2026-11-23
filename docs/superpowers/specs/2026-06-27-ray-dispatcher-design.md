@@ -147,6 +147,7 @@ class RemoteHost:
     identity_file: str | None = None
     known_hosts_file: str = "~/.ssh/known_hosts"
 
+
 @dataclass(frozen=True)
 class Inventory:
     hosts: tuple[RemoteHost, ...]
@@ -165,17 +166,18 @@ identity, port, user, and known-hosts settings.
 ```python
 @dataclass(frozen=True)
 class SecretFile:
-    source: str                  # local file
-    remote_name: str             # one normalized filename, not a path
-    env_var: str | None = None   # optional variable pointing at the remote file
+    source: str  # local file
+    remote_name: str  # one normalized filename, not a path
+    env_var: str | None = None  # optional variable pointing at the remote file
     mode: int = 0o600
+
 
 @dataclass(frozen=True)
 class Project:
     path: str
-    project_id: str              # stable, path-safe identifier
-    python: str                  # exact version, for example "3.10.18"
-    uv_version: str              # exact version, for example "0.11.25"
+    project_id: str  # stable, path-safe identifier
+    python: str  # exact version, for example "3.10.18"
+    uv_version: str  # exact version, for example "0.11.25"
     secrets: tuple[SecretFile, ...] = ()
     exclude: tuple[str, ...] = (".venv/", ".git/", "solutions/")
     dependency_groups: tuple[str, ...] = ()
@@ -200,14 +202,16 @@ are owned by the SSH user and use the requested restrictive mode.
 ```python
 @dataclass(frozen=True)
 class InputSpec:
-    source: str                  # absolute or Project.path-relative local path
-    destination: str            # normalized run-root-relative POSIX path
+    source: str  # absolute or Project.path-relative local path
+    destination: str  # normalized run-root-relative POSIX path
+
 
 @dataclass(frozen=True)
 class OutputSpec:
-    source: str                  # normalized run-root-relative POSIX path
+    source: str  # normalized run-root-relative POSIX path
     destination: str | None = None  # relative to the job's local outputs dir
     required: bool = True
+
 
 @dataclass(frozen=True)
 class Job:
@@ -217,7 +221,7 @@ class Job:
     outputs: tuple[OutputSpec, ...] = ()
     env: Mapping[str, str] = field(default_factory=dict)
     timeout_s: float | None = None
-    cwd: str = "."              # normalized run-root-relative POSIX path
+    cwd: str = "."  # normalized run-root-relative POSIX path
 ```
 
 `id` must match `[A-Za-z0-9][A-Za-z0-9._-]{0,127}` and be unique within a
@@ -240,6 +244,7 @@ class JobStatus(Enum):
     TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
 
+
 class FailureKind(Enum):
     COMMAND = "command"
     SSH = "ssh"
@@ -249,20 +254,25 @@ class FailureKind(Enum):
     HOST_LOST = "host_lost"
     INTERNAL = "internal"
 
+
 @dataclass(frozen=True)
 class RetryPolicy:
     max_attempts: int = 2
-    retry_on: frozenset[FailureKind] = frozenset({
-        FailureKind.SSH,
-        FailureKind.HOST_LOST,
-        FailureKind.COLLECTION,
-    })
+    retry_on: frozenset[FailureKind] = frozenset(
+        {
+            FailureKind.SSH,
+            FailureKind.HOST_LOST,
+            FailureKind.COLLECTION,
+        }
+    )
+
 
 @dataclass(frozen=True)
 class JobHandle:
     batch_id: str
     job_id: str
-    token: str                   # opaque; consumers must not interpret it
+    token: str  # opaque; consumers must not interpret it
+
 
 @dataclass(frozen=True)
 class AttemptResult:
@@ -276,6 +286,7 @@ class AttemptResult:
     failure_kind: FailureKind | None = None
     error: str | None = None
 
+
 @dataclass(frozen=True)
 class JobResult:
     id: str
@@ -288,6 +299,7 @@ class JobResult:
     attempts: tuple[AttemptResult, ...]
     error: str | None = None
 
+
 @dataclass(frozen=True)
 class HostProvisioningResult:
     host: str
@@ -295,6 +307,7 @@ class HostProvisioningResult:
     source_digest: str | None
     environment_digest: str | None
     error: str | None = None
+
 
 @dataclass(frozen=True)
 class ProvisioningReport:
@@ -363,30 +376,44 @@ from ray_dispatcher import (
     SecretFile,
 )
 
-inventory = Inventory((
-    RemoteHost("10.0.0.11", user="ubuntu", slots=2),
-    RemoteHost("10.0.0.12", user="ubuntu", slots=2),
-))
+inventory = Inventory(
+    (
+        RemoteHost("10.0.0.11", user="ubuntu", slots=2),
+        RemoteHost("10.0.0.12", user="ubuntu", slots=2),
+    )
+)
 
 project = Project(
     path="../DFaasOptimizer",
     project_id="dfaas-optimizer",
     python="3.10.18",
     uv_version="0.11.25",
-    secrets=(SecretFile(
-        source="~/lic/gurobi.lic",
-        remote_name="gurobi.lic",
-        env_var="GRB_LICENSE_FILE",
-    ),),
+    secrets=(
+        SecretFile(
+            source="~/lic/gurobi.lic",
+            remote_name="gurobi.lic",
+            env_var="GRB_LICENSE_FILE",
+        ),
+    ),
 )
 
-jobs = [Job(
-    id="madea-smoke",
-    command=("python", "run.py", "--config", "config_files/eval_smoke.json",
-             "--methods", "faas-madea", "--n_experiments", "5"),
-    inputs=(InputSpec("config_files/eval_smoke.json", "config_files/eval_smoke.json"),),
-    outputs=(OutputSpec("solutions/eval_smoke", required=True),),
-)]
+jobs = [
+    Job(
+        id="madea-smoke",
+        command=(
+            "python",
+            "run.py",
+            "--config",
+            "config_files/eval_smoke.json",
+            "--methods",
+            "faas-madea",
+            "--n_experiments",
+            "5",
+        ),
+        inputs=(InputSpec("config_files/eval_smoke.json", "config_files/eval_smoke.json"),),
+        outputs=(OutputSpec("solutions/eval_smoke", required=True),),
+    )
+]
 
 with Dispatcher(inventory, project, results_dir="./results") as dispatcher:
     results = dispatcher.run(jobs)

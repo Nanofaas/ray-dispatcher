@@ -40,6 +40,7 @@ Add to `tests/integration/test_host_lease_actor.py`:
 ```python
 import time
 
+
 def test_actor_lease_handle_heartbeats_while_held():
     ray.init(address="local", namespace="test-heartbeat", num_cpus=2)
     try:
@@ -188,10 +189,12 @@ def _project():
 
 def _ok_transport(host: RemoteHost) -> FakeTransport:
     """FakeTransport that answers all execute_attempt commands with success."""
+
     def results(argv: list[str]) -> CommandResult:
         if argv[0] == "cat":  # read result.json
             return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -226,11 +229,19 @@ def test_attempt_task_succeeds_with_fake_transport(tmp_path):
         job = Job(id="job1", command=("echo", "hi"))
 
         ref = _attempt_task.remote(  # type: ignore[attr-defined]
-            job, "batch1", local, runtimes, inv_hosts, actor, _ok_transport, RetryPolicy(),
+            job,
+            "batch1",
+            local,
+            runtimes,
+            inv_hosts,
+            actor,
+            _ok_transport,
+            RetryPolicy(),
             heartbeat_interval_s=1.0,
         )
         result = ray.get(ref)
         from ray_dispatcher.models import JobStatus
+
         assert result.status == JobStatus.SUCCEEDED
         assert result.id == "job1"
         # result.json written to disk
@@ -255,13 +266,22 @@ def test_attempt_task_catch_all_returns_internal_on_unexpected_exception(tmp_pat
                 if argv[0] == "cat":
                     return CommandResult(0, "not-json!", "", 0.0)  # malformed result.json
                 return CommandResult(0, "", "", 0.0)
+
             return FakeTransport(run_results=results)
 
         ref = _attempt_task.remote(  # type: ignore[attr-defined]
-            job, "batch1", local, runtimes, inv_hosts, actor, _bad_transport, RetryPolicy(),
+            job,
+            "batch1",
+            local,
+            runtimes,
+            inv_hosts,
+            actor,
+            _bad_transport,
+            RetryPolicy(),
         )
         result = ray.get(ref)
         from ray_dispatcher.models import JobStatus
+
         assert result.status == JobStatus.FAILED
         assert result.error is not None and "INTERNAL" in result.error
     finally:
@@ -311,17 +331,29 @@ def _attempt_task(
         return result
     except ray.exceptions.TaskCancelledError:
         cancelled = JobResult(
-            id=job.id, batch_id=batch_id, status=JobStatus.CANCELLED,
-            returncode=None, duration_s=0.0, host=None, output_dir=None,
-            attempts=(), error="cancelled",
+            id=job.id,
+            batch_id=batch_id,
+            status=JobStatus.CANCELLED,
+            returncode=None,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error="cancelled",
         )
         write_result_json(local.result_json, cancelled)
         return cancelled
     except Exception as exc:
         internal = JobResult(
-            id=job.id, batch_id=batch_id, status=JobStatus.FAILED,
-            returncode=None, duration_s=0.0, host=None, output_dir=None,
-            attempts=(), error=f"INTERNAL: {type(exc).__name__}: {exc}",
+            id=job.id,
+            batch_id=batch_id,
+            status=JobStatus.FAILED,
+            returncode=None,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error=f"INTERNAL: {type(exc).__name__}: {exc}",
         )
         write_result_json(local.result_json, internal)
         return internal
@@ -393,9 +425,9 @@ def _project():
 
 
 def _canned_outcome(*host_names: str) -> ProvisioningOutcome:
-    report = ProvisioningReport(tuple(
-        HostProvisioningResult(h, True, "src123", "env123") for h in host_names
-    ))
+    report = ProvisioningReport(
+        tuple(HostProvisioningResult(h, True, "src123", "env123") for h in host_names)
+    )
     return ProvisioningOutcome(report, sessions={})
 
 
@@ -406,17 +438,20 @@ def _ok_transport(host: RemoteHost) -> FakeTransport:
         if argv[0] == "cat":
             return CommandResult(0, '{"returncode": 0, "duration_s": 0.05}', "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
 def _fail_transport(host: RemoteHost) -> FakeTransport:
     """FakeTransport that reports returncode=1 (COMMAND failure)."""
+
     def results(argv: list[str]) -> CommandResult:
         if 'printf %s "$HOME"' in " ".join(argv):
             return CommandResult(0, "/home/ubuntu", "", 0.0)
         if argv[0] == "cat":
             return CommandResult(0, '{"returncode": 1, "duration_s": 0.05}', "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -465,6 +500,7 @@ def test_status_returns_running_then_succeeded(tmp_path, monkeypatch):
             if argv[0] == "cat":
                 return CommandResult(0, '{"returncode": 0, "duration_s": 0.1}', "", 0.0)
             return CommandResult(0, "", "", 0.0)
+
         return FakeTransport(run_results=results)
 
     inv = Inventory((RemoteHost("10.0.0.1", user="ubuntu", slots=1),))
@@ -524,51 +560,66 @@ def __init__(
 **3b. Update `setup()`:** after building `inv_hosts`, store it:
 
 ```python
-        inv_hosts = {h.host: h for h in inventory.hosts}
-        inv_slots = {name: inv_hosts[name].slots for name in healthy}
-        slots = inv_slots
-        self._inv_hosts = inv_hosts          # ← add this line
-        self._runtimes = { ... }             # unchanged
+inv_hosts = {h.host: h for h in inventory.hosts}
+inv_slots = {name: inv_hosts[name].slots for name in healthy}
+slots = inv_slots
+self._inv_hosts = inv_hosts  # ← add this line
+self._runtimes = {...}  # unchanged
 ```
 
 **3c. Replace the four method stubs** with real implementations:
 
 ```python
-    def submit(self, batch_id: str, job: Job) -> JobHandle:
-        token = uuid.uuid4().hex
-        local = JobLayout(self._results_dir, batch_id, job.id)
-        ref = _attempt_task.remote(  # type: ignore[attr-defined]
-            job, batch_id, local, self._runtimes, self._inv_hosts,
-            self._actor, self._transport_factory, self._retry_policy,
+def submit(self, batch_id: str, job: Job) -> JobHandle:
+    token = uuid.uuid4().hex
+    local = JobLayout(self._results_dir, batch_id, job.id)
+    ref = _attempt_task.remote(  # type: ignore[attr-defined]
+        job,
+        batch_id,
+        local,
+        self._runtimes,
+        self._inv_hosts,
+        self._actor,
+        self._transport_factory,
+        self._retry_policy,
+    )
+    self._refs[token] = ref
+    return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
+
+
+def status(self, handle: JobHandle) -> JobStatus:
+    ref = self._refs.get(handle.token)
+    if ref is None:
+        return JobStatus.PENDING
+    ready, _ = ray.wait([ref], timeout=0)  # type: ignore[arg-type]
+    if ready:
+        result: JobResult = ray.get(ref)  # type: ignore[assignment]
+        return result.status
+    return JobStatus.RUNNING
+
+
+def cancel(self, handle: JobHandle) -> None:
+    ref = self._refs.get(handle.token)
+    if ref is not None:
+        ray.cancel(ref)  # type: ignore[arg-type]
+
+
+def resolve(self, handle: JobHandle) -> JobResult:
+    ref = self._refs[handle.token]
+    try:
+        return ray.get(ref)  # type: ignore[no-any-return]
+    except ray.exceptions.TaskCancelledError:
+        return JobResult(
+            id=handle.job_id,
+            batch_id=handle.batch_id,
+            status=JobStatus.CANCELLED,
+            returncode=None,
+            duration_s=0.0,
+            host=None,
+            output_dir=None,
+            attempts=(),
+            error="cancelled",
         )
-        self._refs[token] = ref
-        return JobHandle(batch_id=batch_id, job_id=job.id, token=token)
-
-    def status(self, handle: JobHandle) -> JobStatus:
-        ref = self._refs.get(handle.token)
-        if ref is None:
-            return JobStatus.PENDING
-        ready, _ = ray.wait([ref], timeout=0)  # type: ignore[arg-type]
-        if ready:
-            result: JobResult = ray.get(ref)  # type: ignore[assignment]
-            return result.status
-        return JobStatus.RUNNING
-
-    def cancel(self, handle: JobHandle) -> None:
-        ref = self._refs.get(handle.token)
-        if ref is not None:
-            ray.cancel(ref)  # type: ignore[arg-type]
-
-    def resolve(self, handle: JobHandle) -> JobResult:
-        ref = self._refs[handle.token]
-        try:
-            return ray.get(ref)  # type: ignore[no-any-return]
-        except ray.exceptions.TaskCancelledError:
-            return JobResult(
-                id=handle.job_id, batch_id=handle.batch_id, status=JobStatus.CANCELLED,
-                returncode=None, duration_s=0.0, host=None, output_dir=None,
-                attempts=(), error="cancelled",
-            )
 ```
 
 Also ensure `import uuid` is at the top of `ssh_ray.py` in the stdlib group.
@@ -674,6 +725,7 @@ def test_execute_attempt_returns_timeout_when_runner_exceeds_timeout_s(tmp_path)
 
 def test_execute_attempt_no_timeout_when_timeout_s_is_none(tmp_path):
     """When timeout_s is None, the runner is invoked without threading (§8.1 baseline)."""
+
     def results(argv: list[str]) -> CommandResult:
         if argv[0] == "cat":
             return CommandResult(0, '{"returncode": 0, "duration_s": 0.0}', "", 0.0)
