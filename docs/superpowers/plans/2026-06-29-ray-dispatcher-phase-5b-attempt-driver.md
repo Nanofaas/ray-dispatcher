@@ -119,11 +119,12 @@ class RunPaths:
 Add these two methods to `RemoteLayout` (after the existing `uv_bin` method):
 
 ```python
-    def run_dir(self, batch_id: str, job_id: str, attempt: int) -> str:
-        return f"{self.root}/runs/{batch_id}/{job_id}/{attempt}"
+def run_dir(self, batch_id: str, job_id: str, attempt: int) -> str:
+    return f"{self.root}/runs/{batch_id}/{job_id}/{attempt}"
 
-    def run_paths(self, batch_id: str, job_id: str, attempt: int) -> RunPaths:
-        return RunPaths(self.run_dir(batch_id, job_id, attempt))
+
+def run_paths(self, batch_id: str, job_id: str, attempt: int) -> RunPaths:
+    return RunPaths(self.run_dir(batch_id, job_id, attempt))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -252,8 +253,9 @@ from ray_dispatcher.scheduling import secret_env_map
 
 
 def _project(secrets):
-    return Project(path="/p", project_id="dfaas", python="3.10.18",
-                   uv_version="0.11.25", secrets=secrets)
+    return Project(
+        path="/p", project_id="dfaas", python="3.10.18", uv_version="0.11.25", secrets=secrets
+    )
 
 
 def test_maps_env_var_to_remote_secret_path():
@@ -337,10 +339,14 @@ from ray_dispatcher.scheduling import build_runner_manifest
 
 def test_manifest_keys_match_remote_runner():
     run = RunPaths("/home/u/.ray_dispatcher/runs/b/jobA/1")
-    job = Job(id="jobA", command=("python", "run.py", "--n", "5"),
-              env={"FOO": "bar"}, cwd="sub/dir")
+    job = Job(
+        id="jobA", command=("python", "run.py", "--n", "5"), env={"FOO": "bar"}, cwd="sub/dir"
+    )
     m = build_runner_manifest(
-        job, run_root=run.run_root, venv="/env/.venv", run=run,
+        job,
+        run_root=run.run_root,
+        venv="/env/.venv",
+        run=run,
         secret_env={"GRB_LICENSE_FILE": "/secrets/g.lic"},
     )
     assert m["argv"] == ["python", "run.py", "--n", "5"]
@@ -354,8 +360,18 @@ def test_manifest_keys_match_remote_runner():
     assert m["pid_path"] == run.pid
     assert m["result_path"] == run.result
     # exactly the keys remote_runner.py reads — no more, no less
-    assert set(m) == {"argv", "cwd", "env", "secret_env", "venv_bin",
-                      "virtual_env", "stdout_path", "stderr_path", "pid_path", "result_path"}
+    assert set(m) == {
+        "argv",
+        "cwd",
+        "env",
+        "secret_env",
+        "venv_bin",
+        "virtual_env",
+        "stdout_path",
+        "stderr_path",
+        "pid_path",
+        "result_path",
+    }
 
 
 def test_manifest_cwd_dot_is_run_root():
@@ -476,10 +492,12 @@ def _transport(returncode=0):
     # other remote command (mkdir/rsync/ln/runner) succeeds.
     def results(argv):
         if argv[0] == "cat" and argv[1].endswith("result.json"):
-            doc = json.dumps({"returncode": returncode, "started_at": 1.0,
-                              "ended_at": 2.0, "duration_s": 1.5})
+            doc = json.dumps(
+                {"returncode": returncode, "started_at": 1.0, "ended_at": 2.0, "duration_s": 1.5}
+            )
             return CommandResult(0, doc, "", 0.0)
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -504,8 +522,8 @@ def test_success_with_no_outputs_publishes_and_succeeds(tmp_path):
     # logs recorded locally; outputs published (empty) to the job outputs dir
     lo = _layout(tmp_path)
     assert res.stdout_log == str(lo.stdout_log(1))
-    assert lo.outputs_dir.is_dir()                 # published
-    assert lo.attempt_json(1).is_file()            # attempt.json written
+    assert lo.outputs_dir.is_dir()  # published
+    assert lo.attempt_json(1).is_file()  # attempt.json written
 
 
 def test_command_failure_classifies_command_and_does_not_publish(tmp_path):
@@ -520,8 +538,11 @@ def test_command_failure_classifies_command_and_does_not_publish(tmp_path):
 
 def test_missing_required_output_classifies_output_missing(tmp_path):
     # FakeTransport.pull is a no-op, so a required output never lands -> OUTPUT_MISSING
-    job = Job(id="jobA", command=("python", "run.py"),
-              outputs=(OutputSpec(source="solutions/out.json", required=True),))
+    job = Job(
+        id="jobA",
+        command=("python", "run.py"),
+        outputs=(OutputSpec(source="solutions/out.json", required=True),),
+    )
     t = _transport(returncode=0)
     res = execute_attempt(t, _runtime(), job, batch_id="b1", attempt=1, local=_layout(tmp_path))
     assert res.status is JobStatus.FAILED
@@ -530,22 +551,28 @@ def test_missing_required_output_classifies_output_missing(tmp_path):
 
 
 def test_remote_protocol_is_no_shell_and_ordered(tmp_path):
-    job = Job(id="jobA", command=("python", "run.py", "--cfg", "c.json"),
-              inputs=(InputSpec(source="c.json", destination="c.json"),))
+    job = Job(
+        id="jobA",
+        command=("python", "run.py", "--cfg", "c.json"),
+        inputs=(InputSpec(source="c.json", destination="c.json"),),
+    )
     t = _transport(returncode=0)
     execute_attempt(t, _runtime(), job, batch_id="b1", attempt=1, local=_layout(tmp_path))
     runs = _runs(t)
     flat = [tok for argv in runs for tok in argv]
     # the runner is invoked by absolute python3 + runner path + manifest path
-    assert any(a[0] == "python3" and a[1].endswith("/bin/run123/remote_runner.py")
-               and a[2].endswith("/1/manifest.json") for a in runs)
+    assert any(
+        a[0] == "python3"
+        and a[1].endswith("/bin/run123/remote_runner.py")
+        and a[2].endswith("/1/manifest.json")
+        for a in runs
+    )
     # §7 no-shell: job command tokens never appear as their own argv anywhere;
     # they travel only inside the manifest JSON (written via printf %s).
     assert "run.py" not in flat
     assert "--cfg" not in flat
     # the run dir leaf is created without -p (existing dir is an error, §7.2)
-    assert any("mkdir " in a[2] and "-p" not in a[2].split("&&")[-1] for a in runs
-               if a[0] == "sh")
+    assert any("mkdir " in a[2] and "-p" not in a[2].split("&&")[-1] for a in runs if a[0] == "sh")
     # the input was pushed (host->VM), not shelled
     pushes = [c[1] for c in t.calls if c[0] == "push"]
     assert any(p[0] == "/local/proj/c.json" and p[1].endswith("/run/c.json") for p in pushes)
@@ -608,15 +635,23 @@ def execute_attempt(
     parent = posixpath.dirname(run.base)
     _run_checked(
         transport,
-        ["sh", "-c", f"mkdir -p {shlex.quote(parent)} && mkdir {shlex.quote(run.base)} "
-                     f"&& mkdir {shlex.quote(run.run_root)}"],
+        [
+            "sh",
+            "-c",
+            f"mkdir -p {shlex.quote(parent)} && mkdir {shlex.quote(run.base)} "
+            f"&& mkdir {shlex.quote(run.run_root)}",
+        ],
         "create run dir",
     )
     # §7.3 copy provisioned source on the VM; .venv -> the immutable env.
     _run_checked(
         transport,
-        ["sh", "-c", f"rsync -a {shlex.quote(runtime.layout.source)}/ {shlex.quote(run.run_root)}/ "
-                     f"&& ln -s {shlex.quote(venv)} {shlex.quote(run.venv)}"],
+        [
+            "sh",
+            "-c",
+            f"rsync -a {shlex.quote(runtime.layout.source)}/ {shlex.quote(run.run_root)}/ "
+            f"&& ln -s {shlex.quote(venv)} {shlex.quote(run.venv)}",
+        ],
         "copy source",
     )
     # §7.4 push each input to its explicit (normalized, run-root-relative) destination.
@@ -627,8 +662,10 @@ def execute_attempt(
             ["sh", "-c", f"mkdir -p {shlex.quote(posixpath.dirname(remote_dest))}"],
             "input dir",
         )
-        local_src = inp.source if os.path.isabs(inp.source) else os.path.join(
-            runtime.project_path, inp.source
+        local_src = (
+            inp.source
+            if os.path.isabs(inp.source)
+            else os.path.join(runtime.project_path, inp.source)
         )
         transport.push(local_src, remote_dest)
     # §7.5 write the runner manifest (no shell assembled from user strings).

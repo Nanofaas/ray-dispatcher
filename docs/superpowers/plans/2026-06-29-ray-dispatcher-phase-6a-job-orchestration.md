@@ -128,9 +128,15 @@ from ray_dispatcher.scheduling import assemble_job_result
 
 def _attempt(n, host, status, rc, dur, fk=None, err=None):
     return AttemptResult(
-        number=n, host=host, status=status, returncode=rc, duration_s=dur,
-        stdout_log=f"a/{n}/stdout.log", stderr_log=f"a/{n}/stderr.log",
-        failure_kind=fk, error=err,
+        number=n,
+        host=host,
+        status=status,
+        returncode=rc,
+        duration_s=dur,
+        stdout_log=f"a/{n}/stdout.log",
+        stderr_log=f"a/{n}/stderr.log",
+        failure_kind=fk,
+        error=err,
     )
 
 
@@ -141,9 +147,9 @@ def test_success_uses_final_attempt_and_sets_output_dir():
     ]
     r = assemble_job_result("jobA", "b1", attempts, outputs_dir="/res/b1/jobA/outputs")
     assert r.status is JobStatus.SUCCEEDED
-    assert r.host == "b"               # final attempt
+    assert r.host == "b"  # final attempt
     assert r.returncode == 0
-    assert r.duration_s == 3.5         # sum across attempts
+    assert r.duration_s == 3.5  # sum across attempts
     assert r.output_dir == "/res/b1/jobA/outputs"
     assert len(r.attempts) == 2
     assert r.error is None
@@ -155,7 +161,7 @@ def test_failure_has_no_output_dir_and_keeps_final_error():
     assert r.status is JobStatus.FAILED
     assert r.host == "a"
     assert r.returncode == 3
-    assert r.output_dir is None        # no publish on failure
+    assert r.output_dir is None  # no publish on failure
     assert r.error == "boom"
     assert r.id == "jobA" and r.batch_id == "b1"
 ```
@@ -247,33 +253,52 @@ class FakeLease:
         self.excludes.append(set(exclude))
         host = self._hosts[self._n]
         self._n += 1
-        return Lease(token=f"tok{self._n}", host=host, slot=0,
-                     attempt_id=attempt_id, expiry_s=0.0, heartbeat_s=0.0)
+        return Lease(
+            token=f"tok{self._n}",
+            host=host,
+            slot=0,
+            attempt_id=attempt_id,
+            expiry_s=0.0,
+            heartbeat_s=0.0,
+        )
 
     def release(self, token):
         pass
 
 
 def _runtime(host):
-    return HostRuntime(host=host, layout=RemoteLayout("/home/u", "dfaas"),
-                       environment_digest="env1", runner_digest="run1",
-                       project_path="/proj", secret_env={})
+    return HostRuntime(
+        host=host,
+        layout=RemoteLayout("/home/u", "dfaas"),
+        environment_digest="env1",
+        runner_digest="run1",
+        project_path="/proj",
+        secret_env={},
+    )
 
 
 def _ok_transport(rc=0):
     def results(argv):
         if argv[0] == "cat" and argv[1].endswith("result.json"):
-            return CommandResult(0, json.dumps(
-                {"returncode": rc, "started_at": 1.0, "ended_at": 2.0, "duration_s": 1.5}), "", 0.0)
+            return CommandResult(
+                0,
+                json.dumps(
+                    {"returncode": rc, "started_at": 1.0, "ended_at": 2.0, "duration_s": 1.5}
+                ),
+                "",
+                0.0,
+            )
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
 def _ssh_failing_transport():
     def results(argv):
-        if argv[0] == "python3":             # the runner invocation
+        if argv[0] == "python3":  # the runner invocation
             raise TransportError("ssh dropped")
         return CommandResult(0, "", "", 0.0)
+
     return FakeTransport(run_results=results)
 
 
@@ -284,24 +309,36 @@ def _layout(tmp_path, job_id="jobA"):
 def test_success_first_attempt(tmp_path):
     lease = FakeLease(["a"])
     job = Job(id="jobA", command=("python", "run.py"))  # no outputs
-    r = run_job(job, batch_id="b1", lease=lease,
-                runtime_for=_runtime, transport_for=lambda h: _ok_transport(0),
-                local=_layout(tmp_path), policy=RetryPolicy())
+    r = run_job(
+        job,
+        batch_id="b1",
+        lease=lease,
+        runtime_for=_runtime,
+        transport_for=lambda h: _ok_transport(0),
+        local=_layout(tmp_path),
+        policy=RetryPolicy(),
+    )
     assert r.status is JobStatus.SUCCEEDED
     assert r.host == "a"
     assert len(r.attempts) == 1
-    assert lease.excludes == [set()]        # first acquire excludes nothing
+    assert lease.excludes == [set()]  # first acquire excludes nothing
 
 
 def test_ssh_failure_retries_on_different_host(tmp_path):
     lease = FakeLease(["a", "b"])
     transports = {"a": _ssh_failing_transport(), "b": _ok_transport(0)}
     job = Job(id="jobA", command=("python", "run.py"))
-    r = run_job(job, batch_id="b1", lease=lease,
-                runtime_for=_runtime, transport_for=lambda h: transports[h],
-                local=_layout(tmp_path), policy=RetryPolicy())
+    r = run_job(
+        job,
+        batch_id="b1",
+        lease=lease,
+        runtime_for=_runtime,
+        transport_for=lambda h: transports[h],
+        local=_layout(tmp_path),
+        policy=RetryPolicy(),
+    )
     assert r.status is JobStatus.SUCCEEDED
-    assert r.host == "b"                     # retried elsewhere
+    assert r.host == "b"  # retried elsewhere
     assert len(r.attempts) == 2
     assert r.attempts[0].failure_kind is FailureKind.SSH
     assert lease.excludes == [set(), {"a"}]  # second acquire excludes the tried host
@@ -310,24 +347,36 @@ def test_ssh_failure_retries_on_different_host(tmp_path):
 def test_ssh_failure_exhausts_attempts(tmp_path):
     lease = FakeLease(["a", "b"])
     job = Job(id="jobA", command=("python", "run.py"))
-    r = run_job(job, batch_id="b1", lease=lease,
-                runtime_for=_runtime, transport_for=lambda h: _ssh_failing_transport(),
-                local=_layout(tmp_path), policy=RetryPolicy())  # max_attempts=2
+    r = run_job(
+        job,
+        batch_id="b1",
+        lease=lease,
+        runtime_for=_runtime,
+        transport_for=lambda h: _ssh_failing_transport(),
+        local=_layout(tmp_path),
+        policy=RetryPolicy(),
+    )  # max_attempts=2
     assert r.status is JobStatus.FAILED
     assert r.attempts[-1].failure_kind is FailureKind.SSH
-    assert len(r.attempts) == 2              # stopped at the budget
+    assert len(r.attempts) == 2  # stopped at the budget
 
 
 def test_command_failure_is_not_retried(tmp_path):
     lease = FakeLease(["a", "b"])
     job = Job(id="jobA", command=("python", "run.py"))
-    r = run_job(job, batch_id="b1", lease=lease,
-                runtime_for=_runtime, transport_for=lambda h: _ok_transport(rc=3),
-                local=_layout(tmp_path), policy=RetryPolicy())
+    r = run_job(
+        job,
+        batch_id="b1",
+        lease=lease,
+        runtime_for=_runtime,
+        transport_for=lambda h: _ok_transport(rc=3),
+        local=_layout(tmp_path),
+        policy=RetryPolicy(),
+    )
     assert r.status is JobStatus.FAILED
     assert r.returncode == 3
     assert r.attempts[-1].failure_kind is FailureKind.COMMAND
-    assert len(r.attempts) == 1              # COMMAND not retried
+    assert len(r.attempts) == 1  # COMMAND not retried
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -393,8 +442,12 @@ def run_job(
         leased = lease.acquire(job.id, exclude=tried)
         try:
             result = execute_attempt(
-                transport_for(leased.host), runtime_for(leased.host), job,
-                batch_id=batch_id, attempt=n, local=local,
+                transport_for(leased.host),
+                runtime_for(leased.host),
+                job,
+                batch_id=batch_id,
+                attempt=n,
+                local=local,
             )
         except TransportError as e:
             result = _failed_attempt(n, leased.host, FailureKind.SSH, str(e), local)
@@ -408,9 +461,7 @@ def run_job(
             policy, result.failure_kind, len(attempts)
         ):
             break
-    return assemble_job_result(
-        job.id, batch_id, attempts, outputs_dir=str(local.outputs_dir)
-    )
+    return assemble_job_result(job.id, batch_id, attempts, outputs_dir=str(local.outputs_dir))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**

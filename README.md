@@ -7,7 +7,7 @@ the implementation plan.
 ## Installation and imports
 
 Install with `pip install ray-dispatcher` or `uv add ray-dispatcher`.
-Requires Python >=3.10. For development, install from a checkout with
+Requires Python >=3.11. For development, install from a checkout with
 `uv sync --locked`.
 
 ```python
@@ -53,7 +53,7 @@ it does not reserve the name. No API token or repository secret is needed.
 Run **PyPI release → Run workflow** in GitHub Actions to verify the complete
 release pipeline without uploading anything. Download the `python-distributions`
 artifact to inspect wheel and sdist. A version bump on `main` runs the same
-checks on Python 3.10 and 3.13, including integration tests, audits, metadata
+checks on Python 3.11 and 3.13, including integration tests, audits, metadata
 validation and an isolated wheel install, before uploading those exact artifacts.
 Only the upload job receives OIDC permission. Unchanged versions do not publish;
 re-running an already successful release will fail because PyPI files cannot
@@ -78,7 +78,7 @@ uv run pytest tests/unit -q
 ```
 
 CI runs lint, formatting, strict type checking and the complete local test suite
-on Python 3.10 and 3.13. Integration tests start a local Ray runtime; unit tests
+on Python 3.11 and 3.13. Integration tests start a local Ray runtime; unit tests
 do not start Ray. Run integration tests with the interpreter created by
 `uv sync`: wrapping them in `uv run` activates Ray’s automatic runtime-environment
 repackaging, which is unnecessary for this exclusively local runtime.

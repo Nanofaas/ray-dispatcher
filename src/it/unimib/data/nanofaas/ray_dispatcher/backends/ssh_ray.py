@@ -78,7 +78,9 @@ class _ActorLeaseHandle:
 
     def acquire(self, attempt_id: str, *, exclude: Iterable[str] = ()) -> Lease:
         try:
-            lease = ray.get(self._actor.acquire.remote(attempt_id, exclude=tuple(exclude)))
+            lease = cast(
+                Lease, ray.get(self._actor.acquire.remote(attempt_id, exclude=tuple(exclude)))
+            )
         except ray.exceptions.RayError as exc:
             raise NoHealthyHostsError(f"lease actor unavailable: {exc}") from exc
         self._lost.clear()
@@ -87,7 +89,7 @@ class _ActorLeaseHandle:
             target=self._heartbeat, args=(lease.token,), daemon=True, name="lease-heartbeat"
         )
         self._hb_thread.start()
-        return lease  # type: ignore[no-any-return]
+        return lease
 
     def release(self, token: str) -> None:
         self._stop.set()
@@ -117,8 +119,11 @@ class _ActorLeaseHandle:
     def _heartbeat(self, token: str) -> None:
         while not self._stop.wait(self._heartbeat_interval_s):
             try:
-                alive = ray.get(
-                    self._actor.heartbeat.remote(token), timeout=self._heartbeat_interval_s
+                alive = cast(
+                    bool,
+                    ray.get(
+                        self._actor.heartbeat.remote(token), timeout=self._heartbeat_interval_s
+                    ),
                 )
             except Exception:
                 self._lost.set()
@@ -842,7 +847,7 @@ class SshRayBackend(ExecutionBackend):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 continue
-            active = ray.get(actor.current_hosts.remote(), timeout=remaining)
+            active = cast(dict[str, str], ray.get(actor.current_hosts.remote(), timeout=remaining))
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 continue

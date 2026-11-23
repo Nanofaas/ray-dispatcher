@@ -188,23 +188,26 @@ def _attempt(n=1, status=JobStatus.SUCCEEDED, fk=None):
 
 def test_write_attempt_json_serializes_enums_as_values(tmp_path):
     p = tmp_path / "attempt.json"
-    write_attempt_json(p, _attempt(status=JobStatus.FAILED, fk=FailureKind.COMMAND),
-                       missing_optional=("logs/extra.txt",))
+    write_attempt_json(
+        p,
+        _attempt(status=JobStatus.FAILED, fk=FailureKind.COMMAND),
+        missing_optional=("logs/extra.txt",),
+    )
     doc = json.loads(p.read_text())
     assert doc["number"] == 1
-    assert doc["status"] == "failed"               # enum -> .value
-    assert doc["failure_kind"] == "command"        # enum -> .value
+    assert doc["status"] == "failed"  # enum -> .value
+    assert doc["failure_kind"] == "command"  # enum -> .value
     assert doc["returncode"] == 1
     assert doc["missing_optional"] == ["logs/extra.txt"]
 
 
 def test_write_attempt_json_null_failure_kind(tmp_path):
     p = tmp_path / "attempt.json"
-    write_attempt_json(p, _attempt())              # success: no failure_kind
+    write_attempt_json(p, _attempt())  # success: no failure_kind
     doc = json.loads(p.read_text())
     assert doc["status"] == "succeeded"
     assert doc["failure_kind"] is None
-    assert doc["missing_optional"] == []           # default empty
+    assert doc["missing_optional"] == []  # default empty
 
 
 def test_write_result_json_includes_nested_attempts(tmp_path):
@@ -473,11 +476,11 @@ def test_publish_renames_staging_into_outputs(tmp_path):
     staging = tmp_path / "staging"
     staging.mkdir()
     (staging / "a.json").write_text("payload")
-    outputs = tmp_path / "job" / "outputs"   # parent 'job' does not exist yet
+    outputs = tmp_path / "job" / "outputs"  # parent 'job' does not exist yet
     publish_job_outputs(staging, outputs)
     assert outputs.is_dir()
     assert (outputs / "a.json").read_text() == "payload"
-    assert not staging.exists()              # moved, not copied
+    assert not staging.exists()  # moved, not copied
 
 
 def test_publish_refuses_to_clobber_existing_nonempty_outputs(tmp_path):
